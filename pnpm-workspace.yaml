@@ -1,6 +1,14 @@
+# pnpm 10 refuses to run install scripts unless each package is named here.
+# All four ship prebuilt native binaries; leaving them unapproved means
+# `next build` falls back to a slower JS image pipeline (sharp) and esbuild and
+# tesseract.js fetch their binaries at first use instead of at install time.
+#
+# Written explicitly rather than left as pnpm's "set this to true or false"
+# placeholder, which is not valid config and fails the install on Vercel.
 allowBuilds:
   esbuild: true
   sharp: true
   tesseract.js: true
   unrs-resolver: true
-  workerd: true
+
+enablePrePostScripts: true

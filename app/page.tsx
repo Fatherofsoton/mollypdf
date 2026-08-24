@@ -1,120 +1,711 @@
 'use client';
 
-import { ArrowRight, BarChart3, BookOpen, Check, CheckCircle2, ClipboardPenLine, Download, FileImage, FilePenLine, Files, FileText, Grid3X3, Heart, LoaderCircle, LockKeyhole, Menu, Minimize2, PenLine, RotateCw, Search, ShieldCheck, Sparkles, Trash2, Upload, WandSparkles, X, Zap } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+/**
+ * Home page.
+ *
+ * Rewritten from the original single 54 KB file. What changed, beyond moving
+ * the tool registry and every processing routine into `lib/`:
+ *
+ *  - COPY. Three separate places claimed "0 ไบต์ออกจากเครื่อง" while the code
+ *    posts to /api/stats, downloads a Google font, and pulls a 15 MB Tesseract
+ *    model from a CDN. On a site sold on privacy that is the most damaging
+ *    possible inaccuracy. The claim is now the true and stronger one —
+ *    *เนื้อหาไฟล์* never leaves — with a /privacy page listing every request.
+ *  - The nav said "สถิติบนเครื่องนี้" and the privacy pills said
+ *    "สถิติเก็บในเครื่อง", but the section itself said
+ *    "สถิติรวมจากผู้ใช้งานทุกคน" and the numbers come from a shared D1 table.
+ *    Fixed to match reality.
+ *  - Each tool card is now an `<a href="/tools/…">` that the router intercepts,
+ *    so the grid is crawlable and every tool is deep-linkable, while clicking
+ *    still opens the dialog in place.
+ *  - Type weights dropped from 900 to 500–700, and every muted colour now
+ *    passes AA. See app/globals.css.
+ */
 
-type Category = 'จัดหน้า' | 'ปรับไฟล์' | 'แปลงไฟล์' | 'แก้ไขและเซ็น' | 'ความปลอดภัย' | 'อ่านและตรวจสอบ';
-type Tool = { id:string; title:string; description:string; category:Category; icon:typeof Files; color:string; accept?:string; multiple?:boolean; working?:boolean; badge?:string };
-type GlobalStats = { jobs:number; bytes:number; pages:number; popular:Array<{toolId:string;count:number}> };
+import {
+  ArrowRight, BarChart3, Check, Heart, Menu, Moon, Search, ShieldCheck, Sun, Upload, X, Zap,
+} from 'lucide-react';
+import Link from 'next/link';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { categories, readyTools, toolById, tools, type Tool } from '../lib/tools/registry';
+import { runTool, extractForSpeech, type ToolInput } from '../lib/tools/run';
+import { CancelledError, type Progress } from '../lib/runtime';
+import { ToolDialog, type RunState } from '../components/ToolDialog';
+import { ToolOptions } from '../components/ToolOptions';
+import { SignaturePad, type SignatureValue } from '../components/SignaturePad';
+import { ReadAloud } from '../components/ReadAloud';
 
-const tools: Tool[] = [
-  {id:'merge',title:'รวม PDF',description:'เรียงหลายไฟล์เป็นเอกสารเดียว',category:'จัดหน้า',icon:Files,color:'navy',multiple:true,working:true,badge:'นิยม'},
-  {id:'split',title:'แยก PDF',description:'แยกทุกหน้าออกเป็นไฟล์ ZIP',category:'จัดหน้า',icon:FilePenLine,color:'violet',working:true},
-  {id:'organize',title:'จัดเรียงหน้า',description:'กำหนดลำดับหน้าใหม่ได้เอง',category:'จัดหน้า',icon:Grid3X3,color:'blue',working:true},
-  {id:'remove-pages',title:'ลบหน้า PDF',description:'ตัดหน้าที่ไม่ต้องการออกจากเล่ม',category:'จัดหน้า',icon:Trash2,color:'rose',working:true},
-  {id:'extract-pages',title:'ดึงหน้า PDF',description:'บันทึกเฉพาะหน้าที่เลือก',category:'จัดหน้า',icon:Download,color:'green',working:true},
-  {id:'rotate',title:'หมุน PDF',description:'หมุนทุกหน้าไปทางขวา 90 องศา',category:'จัดหน้า',icon:RotateCw,color:'amber',working:true},
-  {id:'crop',title:'ครอป PDF',description:'ตัดขอบรอบหน้าอย่างปลอดภัย',category:'จัดหน้า',icon:FilePenLine,color:'mint',working:true},
-  {id:'scan',title:'สแกนเป็น PDF',description:'รวมภาพถ่ายเอกสารเป็นหนึ่งเล่ม',category:'จัดหน้า',icon:FileImage,color:'blue',accept:'image/jpeg,image/png',multiple:true,working:true},
-  {id:'compress',title:'บีบอัด PDF',description:'ลดขนาดแบบภาพ เหมาะกับไฟล์สแกน',category:'ปรับไฟล์',icon:Minimize2,color:'green',working:true,badge:'ทำในเครื่อง'},
-  {id:'repair',title:'ซ่อม PDF',description:'เขียนโครงสร้างไฟล์ใหม่เมื่อยังเปิดได้',category:'ปรับไฟล์',icon:WandSparkles,color:'amber',working:true},
-  {id:'ocr',title:'OCR ภาษาไทย',description:'อ่านข้อความจากไฟล์สแกนเป็น TXT',category:'ปรับไฟล์',icon:Search,color:'violet',working:true,badge:'ไทย + อังกฤษ'},
-  {id:'grayscale',title:'แปลงเป็นขาวดำ',description:'แปลงทุกหน้าให้พร้อมพิมพ์ขาวดำ',category:'ปรับไฟล์',icon:FileImage,color:'slate',working:true},
-  {id:'remove-blank',title:'ลบหน้าว่าง',description:'ตรวจและตัดหน้าที่แทบไม่มีเนื้อหา',category:'ปรับไฟล์',icon:Trash2,color:'rose',working:true},
-  {id:'pdf-word',title:'PDF เป็น Word',description:'ดึงข้อความไทยเป็น DOCX ที่แก้ไขได้',category:'แปลงไฟล์',icon:FileText,color:'blue',working:true,badge:'ภาษาไทย'},
-  {id:'pdf-ppt',title:'PDF เป็น PowerPoint',description:'วางแต่ละหน้าเป็นภาพเต็มสไลด์',category:'แปลงไฟล์',icon:FileText,color:'navy',working:true},
-  {id:'pdf-excel',title:'PDF เป็น Excel',description:'จัดข้อความแต่ละหน้าแยกเป็นชีต',category:'แปลงไฟล์',icon:FileText,color:'green',working:true},
-  {id:'pdf-jpg',title:'PDF เป็น JPG',description:'แปลงทุกหน้าเป็นภาพในไฟล์ ZIP',category:'แปลงไฟล์',icon:FileImage,color:'amber',working:true},
-  {id:'pdf-png',title:'PDF เป็น PNG',description:'เก็บทุกหน้าเป็นภาพคมชัด',category:'แปลงไฟล์',icon:FileImage,color:'violet',working:true},
-  {id:'pdf-text',title:'PDF เป็นข้อความ',description:'ดึงข้อความเป็นไฟล์ TXT',category:'แปลงไฟล์',icon:FileText,color:'slate',working:true},
-  {id:'pdf-markdown',title:'PDF เป็น Markdown',description:'แบ่งข้อความตามหน้าเป็น Markdown',category:'แปลงไฟล์',icon:FileText,color:'mint',working:true},
-  {id:'pdfa',title:'PDF เป็น PDF/A',description:'ต้องใช้เอนจินตรวจมาตรฐานเฉพาะทาง',category:'แปลงไฟล์',icon:FileText,color:'blue',badge:'เอนจินเสริม'},
-  {id:'word-pdf',title:'Word เป็น PDF',description:'แปลงข้อความจาก DOCX เป็น PDF',category:'แปลงไฟล์',icon:FileText,color:'blue',accept:'.docx',working:true},
-  {id:'ppt-pdf',title:'PowerPoint เป็น PDF',description:'ดึงข้อความจาก PPTX เป็น PDF อ่านง่าย',category:'แปลงไฟล์',icon:FileText,color:'navy',accept:'.pptx',working:true},
-  {id:'excel-pdf',title:'Excel เป็น PDF',description:'แปลงข้อมูลจาก XLSX เป็นเอกสาร',category:'แปลงไฟล์',icon:FileText,color:'green',accept:'.xlsx',working:true},
-  {id:'jpg-pdf',title:'JPG เป็น PDF',description:'รวมภาพ JPG เป็น PDF หนึ่งเล่ม',category:'แปลงไฟล์',icon:FileImage,color:'amber',accept:'image/jpeg',multiple:true,working:true},
-  {id:'png-pdf',title:'PNG เป็น PDF',description:'รวมภาพ PNG เป็น PDF หนึ่งเล่ม',category:'แปลงไฟล์',icon:FileImage,color:'violet',accept:'image/png',multiple:true,working:true},
-  {id:'html-pdf',title:'HTML เป็น PDF',description:'วาง HTML แล้วแปลงข้อความเป็น PDF',category:'แปลงไฟล์',icon:FileText,color:'slate',accept:'',working:true},
-  {id:'text-pdf',title:'ข้อความเป็น PDF',description:'สร้าง PDF ภาษาไทยจากข้อความ',category:'แปลงไฟล์',icon:FileText,color:'mint',accept:'',working:true},
-  {id:'edit',title:'เพิ่มข้อความใน PDF',description:'วางข้อความใหม่บนหน้าแรก',category:'แก้ไขและเซ็น',icon:FilePenLine,color:'navy',working:true},
-  {id:'watermark',title:'ใส่ลายน้ำ',description:'ประทับคำที่กำหนดลงทุกหน้า',category:'แก้ไขและเซ็น',icon:WandSparkles,color:'violet',working:true},
-  {id:'page-numbers',title:'ใส่เลขหน้า',description:'เพิ่มเลขหน้ากึ่งกลางด้านล่าง',category:'แก้ไขและเซ็น',icon:FileText,color:'blue',working:true},
-  {id:'header-footer',title:'หัว–ท้ายกระดาษ',description:'เติมข้อความส่วนหัวและเลขหน้า',category:'แก้ไขและเซ็น',icon:FileText,color:'slate',working:true},
-  {id:'create-form',title:'สร้างฟอร์ม PDF',description:'เพิ่มช่องกรอกข้อความบนหน้าแรก',category:'แก้ไขและเซ็น',icon:ClipboardPenLine,color:'green',working:true},
-  {id:'fill-form',title:'กรอกฟอร์ม PDF',description:'กรอกทุกช่องข้อความด้วยข้อมูลที่ให้',category:'แก้ไขและเซ็น',icon:ClipboardPenLine,color:'amber',working:true},
-  {id:'sign',title:'เซ็นเอกสาร',description:'พิมพ์ลายเซ็นและวางบนหน้าแรก',category:'แก้ไขและเซ็น',icon:PenLine,color:'navy',working:true,badge:'ส่วนตัว'},
-  {id:'protect',title:'ล็อก PDF',description:'เข้ารหัส AES-256 ด้วยรหัสผ่าน',category:'ความปลอดภัย',icon:LockKeyhole,color:'green',working:true},
-  {id:'unlock',title:'ปลดล็อก PDF',description:'ใช้รหัสที่ทราบแล้วสร้างสำเนาไม่ล็อก',category:'ความปลอดภัย',icon:LockKeyhole,color:'amber',working:true},
-  {id:'redact',title:'ปิดข้อมูลสำคัญ',description:'ปิดทับคำที่ระบุและแปลงหน้าเป็นภาพ',category:'ความปลอดภัย',icon:ShieldCheck,color:'rose',working:true},
-  {id:'metadata',title:'ลบข้อมูลแฝง',description:'ลบชื่อผู้สร้างและข้อมูลเอกสาร',category:'ความปลอดภัย',icon:ShieldCheck,color:'violet',working:true},
-  {id:'flatten',title:'ล็อกช่องฟอร์ม',description:'รวมช่องกรอกเข้ากับหน้าเอกสาร',category:'ความปลอดภัย',icon:LockKeyhole,color:'slate',working:true},
-  {id:'compare',title:'เปรียบเทียบ PDF',description:'วางสองเอกสารเทียบกันทีละหน้า',category:'อ่านและตรวจสอบ',icon:Files,color:'blue',multiple:true,working:true},
-  {id:'word-count',title:'นับคำใน PDF',description:'สรุปหน้า คำ และตัวอักษร',category:'อ่านและตรวจสอบ',icon:Search,color:'green',working:true},
-  {id:'read-aloud',title:'อ่าน PDF ให้ฟัง',description:'ใช้เสียงภาษาไทยจากอุปกรณ์',category:'อ่านและตรวจสอบ',icon:BookOpen,color:'navy',working:true},
-];
+type GlobalStats = { jobs: number; bytes: number; pages: number; popular: Array<{ toolId: string; count: number }> };
 
-const categories = ['ทั้งหมด','จัดหน้า','ปรับไฟล์','แปลงไฟล์','แก้ไขและเซ็น','ความปลอดภัย','อ่านและตรวจสอบ'] as const;
-const textTools = ['text-pdf','html-pdf'];
-const inputLabels:Record<string,string> = {organize:'ลำดับหน้าใหม่','remove-pages':'หน้าที่ต้องการลบ','extract-pages':'หน้าที่ต้องการดึง',protect:'รหัสผ่านใหม่',unlock:'รหัสผ่านเดิม',redact:'คำหรือข้อความที่ต้องการปิด',edit:'ข้อความที่จะเพิ่ม',watermark:'ข้อความลายน้ำ','header-footer':'ข้อความส่วนหัว','create-form':'ชื่อช่องกรอก','fill-form':'ข้อความสำหรับทุกช่อง',sign:'ชื่อหรือลายเซ็นแบบพิมพ์','text-pdf':'ข้อความ','html-pdf':'โค้ด HTML'};
+const FILELESS = new Set(['text-pdf', 'html-pdf']);
 
-function formatBytes(bytes:number){ if(!bytes)return'0 KB'; if(bytes<1048576)return`${Math.max(1,bytes/1024).toFixed(0)} KB`; return`${(bytes/1048576).toFixed(1)} MB`; }
-function downloadBlob(blob:Blob,name:string){ const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),2000); }
-function parsePages(raw:string,total:number,preserve=false){ const values:number[]=[]; for(const part of raw.split(',')){const value=part.trim();if(!value)continue;if(value.includes('-')){const[a,b]=value.split('-').map(Number);const step=a<=b?1:-1;for(let i=a;step>0?i<=b:i>=b;i+=step)if(i>=1&&i<=total)values.push(i-1);}else{const n=Number(value);if(n>=1&&n<=total)values.push(n-1);}} return preserve?values:[...new Set(values)].sort((a,b)=>a-b); }
-async function getPdfJs(){const pdfjs=await import('pdfjs-dist');pdfjs.GlobalWorkerOptions.workerSrc=new URL('pdfjs-dist/build/pdf.worker.min.mjs',import.meta.url).toString();return pdfjs;}
-async function countProcessedPages(files:File[]){if(!files.length)return 1;let total=0;const pdfjs=await getPdfJs();for(const file of files){if(file.type==='application/pdf'||file.name.toLowerCase().endsWith('.pdf')){try{const doc=await pdfjs.getDocument({data:await file.arrayBuffer()}).promise;total+=doc.numPages;}catch{total+=1;}}else total+=1;}return Math.max(1,total);}
-async function extractText(file:File){const pdfjs=await getPdfJs();const doc=await pdfjs.getDocument({data:await file.arrayBuffer()}).promise;const pages:string[]=[];for(let n=1;n<=doc.numPages;n++){const page=await doc.getPage(n);const content=await page.getTextContent();pages.push(content.items.map(i=>'str'in i?i.str:'').join(' ').replace(/\s+/g,' ').trim());}return pages;}
-async function renderPdf(file:File,scale=1.45){const pdfjs=await getPdfJs();const doc=await pdfjs.getDocument({data:await file.arrayBuffer()}).promise;const canvases:HTMLCanvasElement[]=[];for(let n=1;n<=doc.numPages;n++){const page=await doc.getPage(n);const viewport=page.getViewport({scale});const canvas=document.createElement('canvas');canvas.width=Math.ceil(viewport.width);canvas.height=Math.ceil(viewport.height);const ctx=canvas.getContext('2d',{alpha:false});if(!ctx)throw new Error('อุปกรณ์นี้ไม่รองรับ Canvas');ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);await page.render({canvas,canvasContext:ctx,viewport}).promise;canvases.push(canvas);}return canvases;}
-function canvasBlob(canvas:HTMLCanvasElement,type='image/png',quality=.86){return new Promise<Blob>((resolve,reject)=>canvas.toBlob(b=>b?resolve(b):reject(new Error('สร้างภาพไม่สำเร็จ')),type,quality));}
-async function canvasesToPdf(canvases:HTMLCanvasElement[],quality=.82){const{PDFDocument}=await import('pdf-lib');const out=await PDFDocument.create();for(const canvas of canvases){const blob=await canvasBlob(canvas,'image/jpeg',quality);const image=await out.embedJpg(await blob.arrayBuffer());const page=out.addPage([image.width,image.height]);page.drawImage(image,{x:0,y:0,width:image.width,height:image.height});}return new Blob([new Uint8Array(await out.save())],{type:'application/pdf'});}
-async function textToPdf(text:string){const width=1240,height=1754,margin=110,lineHeight=48;const probe=document.createElement('canvas').getContext('2d')!;probe.font='30px "Noto Sans Thai",Tahoma,sans-serif';const lines:string[]=[];for(const paragraph of text.replace(/\r/g,'').split('\n')){let line='';for(const char of paragraph){if(probe.measureText(line+char).width>width-margin*2){lines.push(line);line=char}else line+=char;}lines.push(line);}const pages:HTMLCanvasElement[]=[];for(let start=0;start<lines.length||start===0;start+=31){const page=document.createElement('canvas');page.width=width;page.height=height;const ctx=page.getContext('2d')!;ctx.fillStyle='#fff';ctx.fillRect(0,0,width,height);ctx.fillStyle='#082a4a';ctx.font='30px "Noto Sans Thai",Tahoma,sans-serif';ctx.textBaseline='top';lines.slice(start,start+31).forEach((line,i)=>ctx.fillText(line,margin,margin+i*lineHeight));pages.push(page);}return canvasesToPdf(pages,.94);}
-function makeStamp(text:string,color='#082a4a',font='700 42px "Noto Sans Thai",Tahoma,sans-serif'){const c=document.createElement('canvas');c.width=1200;c.height=120;const x=c.getContext('2d')!;x.font=font;x.fillStyle=color;x.textAlign='center';x.textBaseline='middle';x.fillText(text,600,60);return c.toDataURL('image/png');}
+const inputLabels: Record<string, string> = {
+  organize: 'ลำดับหน้าใหม่',
+  'remove-pages': 'หน้าที่ต้องการลบ',
+  'extract-pages': 'หน้าที่ต้องการดึง',
+  protect: 'รหัสผ่านใหม่',
+  unlock: 'รหัสผ่านเดิม',
+  redact: 'คำหรือข้อความที่ต้องการปิด',
+  edit: 'ข้อความที่จะเพิ่ม',
+  watermark: 'ข้อความลายน้ำ',
+  'header-footer': 'ข้อความส่วนหัว',
+  'create-form': 'ชื่อช่องกรอก',
+  sign: 'ชื่อหรือลายเซ็นแบบพิมพ์',
+  'text-pdf': 'ข้อความ',
+  'html-pdf': 'โค้ด HTML',
+};
 
-export default function Home(){
-  const[activeCategory,setActiveCategory]=useState<(typeof categories)[number]>('ทั้งหมด');const[search,setSearch]=useState('');const[selected,setSelected]=useState<Tool|null>(null);const[files,setFiles]=useState<File[]>([]);const[toolText,setToolText]=useState('');const[status,setStatus]=useState<'idle'|'processing'|'done'|'error'>('idle');const[message,setMessage]=useState('');const[mobileMenu,setMobileMenu]=useState(false);const[globalStats,setGlobalStats]=useState<GlobalStats>({jobs:0,bytes:0,pages:0,popular:[]});const[globalStatsReady,setGlobalStatsReady]=useState(false);const inputRef=useRef<HTMLInputElement>(null);
-  useEffect(()=>{const timer=window.setTimeout(()=>{fetch('/api/stats',{cache:'no-store'}).then((response)=>response.ok?response.json() as Promise<GlobalStats>:Promise.reject()).then((data)=>{setGlobalStats(data);setGlobalStatsReady(true);}).catch(()=>setGlobalStatsReady(false));},0);return()=>window.clearTimeout(timer);},[]);
-  const filtered=useMemo(()=>tools.filter(t=>(activeCategory==='ทั้งหมด'||t.category===activeCategory)&&(!search.trim()||`${t.title} ${t.description}`.toLowerCase().includes(search.trim().toLowerCase()))),[activeCategory,search]);
-  const popular=useMemo(()=>globalStats.popular.map(({toolId,count})=>({tool:tools.find(t=>t.id===toolId),count})),[globalStats]);
-  function record(tool:Tool,bytes:number,pages:number){fetch('/api/stats',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({toolId:tool.id,bytes,pages})}).then((response)=>response.ok?response.json() as Promise<GlobalStats>:Promise.reject()).then((data)=>{setGlobalStats(data);setGlobalStatsReady(true);}).catch(()=>setGlobalStatsReady(false));}
-  function openTool(tool:Tool){setSelected(tool);setFiles([]);setStatus('idle');setMessage('');const defaults:Record<string,string>={organize:'1, 2, 3','remove-pages':'1','extract-pages':'1',watermark:'สำเนา','header-footer':'เอกสารส่วนตัว','create-form':'ชื่อ-นามสกุล'};setToolText(defaults[tool.id]??'');}
-  function acceptFiles(incoming:File[]){if(!selected)return;setFiles(selected.multiple?incoming:incoming.slice(0,1));setStatus('idle');setMessage('');}
+const defaults: Record<string, string> = {
+  organize: '1, 2, 3',
+  'remove-pages': '1',
+  'extract-pages': '1',
+  watermark: 'สำเนา',
+  'header-footer': 'เอกสารส่วนตัว',
+  'create-form': 'ชื่อ-นามสกุล',
+};
 
-  async function runTool(){
-    if(!selected||(!files.length&&!textTools.includes(selected.id)))return;
-    if(!selected.working){setStatus('error');setMessage('ฟังก์ชันนี้ต้องใช้เอนจินตรวจมาตรฐานเฉพาะทาง จึงยังไม่เปิดเพื่อไม่ให้ได้ไฟล์ที่อ้างมาตรฐานผิด');return;}
-    setStatus('processing');setMessage(selected.id==='ocr'?'กำลังโหลดโมเดลภาษาและอ่านข้อความบนเครื่องนี้…':'กำลังประมวลผลบนอุปกรณ์ของคุณ…');
-    try{
-      const{PDFDocument,StandardFonts,degrees,rgb}=await import('pdf-lib');const filename=files[0]?.name.replace(/\.[^.]+$/,'')||'mollypdf';const pdfBlob=async(doc:{save:()=>Promise<Uint8Array>})=>new Blob([new Uint8Array(await doc.save())],{type:'application/pdf'});
-      if(selected.id==='merge'){const out=await PDFDocument.create();for(const file of files){const src=await PDFDocument.load(await file.arrayBuffer());const copied=await out.copyPages(src,src.getPageIndices());copied.forEach(p=>out.addPage(p));}downloadBlob(await pdfBlob(out),'mollypdf-รวมไฟล์.pdf');}
-      else if(['scan','jpg-pdf','png-pdf'].includes(selected.id)){const out=await PDFDocument.create();for(const file of files){const bytes=await file.arrayBuffer();const image=file.type==='image/png'?await out.embedPng(bytes):await out.embedJpg(bytes);const page=out.addPage([image.width,image.height]);page.drawImage(image,{x:0,y:0,width:image.width,height:image.height});}downloadBlob(await pdfBlob(out),'mollypdf-ภาพเป็น-pdf.pdf');}
-      else if(['pdf-text','pdf-markdown','pdf-word','word-count','read-aloud'].includes(selected.id)){const pages=await extractText(files[0]);const plain=pages.join('\n\n');if(selected.id==='pdf-text')downloadBlob(new Blob([plain],{type:'text/plain;charset=utf-8'}),`${filename}.txt`);if(selected.id==='pdf-markdown')downloadBlob(new Blob([pages.map((t,i)=>`## หน้า ${i+1}\n\n${t}`).join('\n\n---\n\n')],{type:'text/markdown;charset=utf-8'}),`${filename}.md`);if(selected.id==='word-count'){const words=plain.split(/\s+/).filter(Boolean).length;downloadBlob(new Blob([`รายงานจาก mollypdf\n\nชื่อไฟล์: ${files[0].name}\nจำนวนหน้า: ${pages.length}\nจำนวนคำ: ${words}\nจำนวนตัวอักษร: ${plain.length}`]),`${filename}-นับคำ.txt`);}if(selected.id==='read-aloud'){speechSynthesis.cancel();const s=new SpeechSynthesisUtterance(plain.slice(0,12000));s.lang='th-TH';speechSynthesis.speak(s);}if(selected.id==='pdf-word'){const{Document,Packer,PageBreak,Paragraph,TextRun}=await import('docx');const children=pages.flatMap((t,i)=>[...(i?[new Paragraph({children:[new PageBreak()]})]:[]),new Paragraph({children:[new TextRun({text:t,font:'Noto Sans Thai',size:24})],spacing:{line:360}})]);downloadBlob(await Packer.toBlob(new Document({sections:[{properties:{},children}]})),`${filename}.docx`);}}
-      else if(selected.id==='split'){const JSZip=(await import('jszip')).default;const src=await PDFDocument.load(await files[0].arrayBuffer());const zip=new JSZip();for(const i of src.getPageIndices()){const one=await PDFDocument.create();const[p]=await one.copyPages(src,[i]);one.addPage(p);zip.file(`หน้า-${i+1}.pdf`,await one.save());}downloadBlob(await zip.generateAsync({type:'blob'}),`${filename}-แยกหน้า.zip`);}
-      else if(['pdf-jpg','pdf-png'].includes(selected.id)){const JSZip=(await import('jszip')).default,zip=new JSZip(),canvases=await renderPdf(files[0],1.7),jpg=selected.id==='pdf-jpg';for(let i=0;i<canvases.length;i++)zip.file(`หน้า-${i+1}.${jpg?'jpg':'png'}`,await canvasBlob(canvases[i],jpg?'image/jpeg':'image/png',.9));downloadBlob(await zip.generateAsync({type:'blob'}),`${filename}-${jpg?'jpg':'png'}.zip`);}
-      else if(selected.id==='compress'||selected.id==='grayscale'){const canvases=await renderPdf(files[0],selected.id==='compress'?1.1:1.45);if(selected.id==='grayscale')for(const c of canvases){const x=c.getContext('2d')!,im=x.getImageData(0,0,c.width,c.height);for(let i=0;i<im.data.length;i+=4){const g=im.data[i]*.299+im.data[i+1]*.587+im.data[i+2]*.114;im.data[i]=g;im.data[i+1]=g;im.data[i+2]=g;}x.putImageData(im,0,0);}downloadBlob(await canvasesToPdf(canvases,selected.id==='compress'?.58:.84),`${filename}-${selected.id==='compress'?'บีบอัด':'ขาวดำ'}.pdf`);}
-      else if(selected.id==='remove-blank'){const canvases=await renderPdf(files[0],.45);const kept=canvases.filter(c=>{const d=c.getContext('2d')!.getImageData(0,0,c.width,c.height).data;let dark=0;for(let i=0;i<d.length;i+=80)if(d[i]<238||d[i+1]<238||d[i+2]<238)dark++;return dark>(d.length/80)*.003;});if(!kept.length)throw new Error('ตรวจพบว่าเอกสารทุกหน้าเป็นหน้าว่าง');downloadBlob(await canvasesToPdf(kept),`${filename}-ไม่มีหน้าว่าง.pdf`);}
-      else if(selected.id==='ocr'){const{createWorker}=await import('tesseract.js');const worker=await createWorker('tha+eng');const canvases=await renderPdf(files[0],1.7),texts:string[]=[];for(let i=0;i<canvases.length;i++){setMessage(`กำลังอ่านข้อความหน้า ${i+1} จาก ${canvases.length}…`);texts.push((await worker.recognize(canvases[i])).data.text.trim());}await worker.terminate();downloadBlob(new Blob([texts.map((t,i)=>`หน้า ${i+1}\n${t}`).join('\n\n')]),`${filename}-ocr.txt`);}
-      else if(selected.id==='pdf-ppt'){const PptxGenJS=(await import('pptxgenjs')).default,pptx=new PptxGenJS();pptx.layout='LAYOUT_WIDE';for(const c of await renderPdf(files[0],1.35)){const slide=pptx.addSlide();slide.background={color:'FFFFFF'};slide.addImage({data:c.toDataURL('image/jpeg',.9),sizing:{type:'contain',x:0,y:0,w:13.333,h:7.5}});}downloadBlob(await pptx.write({outputType:'blob'}) as Blob,`${filename}.pptx`);}
-      else if(selected.id==='pdf-excel'){const ExcelJS=(await import('exceljs')).default,book=new ExcelJS.Workbook();(await extractText(files[0])).forEach((t,i)=>{const sheet=book.addWorksheet(`หน้า ${i+1}`);t.split(/\n|\s{2,}/).filter(Boolean).forEach(line=>sheet.addRow([line]));sheet.getColumn(1).width=90;});downloadBlob(new Blob([new Uint8Array(await book.xlsx.writeBuffer())]),`${filename}.xlsx`);}
-      else if(selected.id==='word-pdf'){const mammoth=await import('mammoth');downloadBlob(await textToPdf((await mammoth.extractRawText({arrayBuffer:await files[0].arrayBuffer()})).value),`${filename}.pdf`);}
-      else if(selected.id==='excel-pdf'){const ExcelJS=(await import('exceljs')).default,book=new ExcelJS.Workbook();await book.xlsx.load(await files[0].arrayBuffer());const blocks:string[]=[];book.eachSheet(sheet=>{blocks.push(sheet.name);sheet.eachRow(row=>{const values=Array.isArray(row.values)?row.values.slice(1):[];blocks.push(values.map(String).join('   '));});blocks.push('');});downloadBlob(await textToPdf(blocks.join('\n')),`${filename}.pdf`);}
-      else if(selected.id==='ppt-pdf'){const JSZip=(await import('jszip')).default,zip=await JSZip.loadAsync(await files[0].arrayBuffer());const slides=Object.keys(zip.files).filter(n=>/^ppt\/slides\/slide\d+\.xml$/.test(n)).sort((a,b)=>Number(a.match(/\d+/)?.[0])-Number(b.match(/\d+/)?.[0])),parts:string[]=[];for(const slide of slides){const xml=await zip.file(slide)!.async('text');parts.push([...xml.matchAll(/<a:t>(.*?)<\/a:t>/g)].map(m=>m[1].replace(/&amp;/g,'&')).join(' '));}downloadBlob(await textToPdf(parts.join('\n\n──────────\n\n')),`${filename}.pdf`);}
-      else if(textTools.includes(selected.id)){const content=selected.id==='html-pdf'?new DOMParser().parseFromString(toolText,'text/html').body.innerText:toolText;if(!content.trim())throw new Error('กรุณาใส่ข้อความก่อนเริ่ม');downloadBlob(await textToPdf(content),`${filename}.pdf`);}
-      else if(selected.id==='compare'){if(files.length<2)throw new Error('กรุณาเลือก PDF 2 ไฟล์');const[left,right]=await Promise.all([renderPdf(files[0],.8),renderPdf(files[1],.8)]),pages:HTMLCanvasElement[]=[];for(let i=0;i<Math.max(left.length,right.length);i++){const sample=left[i]||right[i],c=document.createElement('canvas');c.width=sample.width*2+24;c.height=sample.height;const x=c.getContext('2d')!;x.fillStyle='#e9eef3';x.fillRect(0,0,c.width,c.height);if(left[i])x.drawImage(left[i],0,0);if(right[i])x.drawImage(right[i],sample.width+24,0);pages.push(c);}downloadBlob(await canvasesToPdf(pages,.82),'mollypdf-เปรียบเทียบ.pdf');}
-      else if(['protect','unlock'].includes(selected.id)){if(!toolText)throw new Error('กรุณากรอกรหัสผ่าน');const cantoo=await import('@cantoo/pdf-lib');const doc=await cantoo.PDFDocument.load(await files[0].arrayBuffer(),selected.id==='unlock'?{password:toolText}:undefined);if(selected.id==='protect')doc.encrypt({userPassword:toolText,ownerPassword:`${toolText}-mollypdf-owner`,permissions:{printing:'highResolution',modifying:false,copying:false,annotating:false,fillingForms:true,contentAccessibility:true,documentAssembly:false}});downloadBlob(new Blob([new Uint8Array(await doc.save())]),`${filename}-${selected.id==='protect'?'ล็อกแล้ว':'ปลดล็อกแล้ว'}.pdf`);}
-      else if(selected.id==='redact'){if(!toolText.trim())throw new Error('กรุณาระบุข้อความที่ต้องการปิด');const pdfjs=await getPdfJs(),src=await pdfjs.getDocument({data:await files[0].arrayBuffer()}).promise,pages:HTMLCanvasElement[]=[];for(let n=1;n<=src.numPages;n++){const page=await src.getPage(n),viewport=page.getViewport({scale:1.5}),c=document.createElement('canvas');c.width=viewport.width;c.height=viewport.height;const x=c.getContext('2d')!;await page.render({canvas:c,canvasContext:x,viewport}).promise;const content=await page.getTextContent();x.fillStyle='#000';for(const item of content.items)if('str'in item&&item.str.toLowerCase().includes(toolText.toLowerCase())){const[,,,d,e,f]=item.transform,[px,py]=viewport.convertToViewportPoint(e,f);x.fillRect(px-3,py-Math.abs(d)*1.5,Math.max(18,item.width*1.5+6),Math.max(12,Math.abs(d)*1.8));}pages.push(c);}downloadBlob(await canvasesToPdf(pages,.9),`${filename}-ปิดข้อมูล.pdf`);}
-      else{const doc=await PDFDocument.load(await files[0].arrayBuffer()),indices=parsePages(toolText,doc.getPageCount());if(selected.id==='organize'){const seq=parsePages(toolText,doc.getPageCount(),true);if(!seq.length)throw new Error('กรุณาระบุลำดับหน้า');const out=await PDFDocument.create(),copied=await out.copyPages(doc,seq);copied.forEach(p=>out.addPage(p));downloadBlob(await pdfBlob(out),`${filename}-จัดหน้า.pdf`);}else if(selected.id==='rotate'){doc.getPages().forEach(p=>p.setRotation(degrees((p.getRotation().angle+90)%360)));downloadBlob(await pdfBlob(doc),`${filename}-หมุน.pdf`);}else if(selected.id==='remove-pages'){[...indices].reverse().forEach(i=>doc.removePage(i));downloadBlob(await pdfBlob(doc),`${filename}-ลบหน้า.pdf`);}else if(selected.id==='extract-pages'){const out=await PDFDocument.create(),copied=await out.copyPages(doc,indices.length?indices:[0]);copied.forEach(p=>out.addPage(p));downloadBlob(await pdfBlob(out),`${filename}-หน้าที่เลือก.pdf`);}else if(selected.id==='crop'){doc.getPages().forEach(p=>{const{width,height}=p.getSize(),m=Math.min(18,width/20,height/20);p.setCropBox(m,m,width-m*2,height-m*2);});downloadBlob(await pdfBlob(doc),`${filename}-ครอป.pdf`);}else if(selected.id==='repair')downloadBlob(await pdfBlob(doc),`${filename}-ซ่อมแล้ว.pdf`);else if(selected.id==='metadata'){doc.setTitle('');doc.setAuthor('');doc.setSubject('');doc.setKeywords([]);doc.setProducer('mollypdf');doc.setCreator('mollypdf');downloadBlob(await pdfBlob(doc),`${filename}-ลบข้อมูลแฝง.pdf`);}else if(selected.id==='flatten'){doc.getForm().flatten();downloadBlob(await pdfBlob(doc),`${filename}-ล็อกฟอร์ม.pdf`);}else if(selected.id==='page-numbers'){const font=await doc.embedFont(StandardFonts.Helvetica);doc.getPages().forEach((p,i)=>{const label=`${i+1} / ${doc.getPageCount()}`;p.drawText(label,{x:p.getWidth()/2-font.widthOfTextAtSize(label,9)/2,y:18,size:9,font,color:rgb(.15,.24,.33)});});downloadBlob(await pdfBlob(doc),`${filename}-เลขหน้า.pdf`);}else if(['edit','watermark','header-footer','sign'].includes(selected.id)){if(!toolText.trim())throw new Error('กรุณาใส่ข้อความ');const stamp=await doc.embedPng(makeStamp(toolText,selected.id==='watermark'?'#728093':'#082a4a',selected.id==='sign'?'italic 700 48px serif':undefined));const targets=selected.id==='edit'||selected.id==='sign'?[doc.getPage(0)]:doc.getPages();targets.forEach(p=>{const w=selected.id==='sign'?170:Math.min(330,p.getWidth()-40),h=w/10,y=selected.id==='header-footer'?p.getHeight()-h-12:selected.id==='edit'?p.getHeight()/2:selected.id==='sign'?38:p.getHeight()/2;p.drawImage(stamp,{x:selected.id==='sign'?p.getWidth()-w-28:p.getWidth()/2-w/2,y,width:w,height:h,opacity:selected.id==='watermark'?.34:1,rotate:selected.id==='watermark'?degrees(-25):undefined});});downloadBlob(await pdfBlob(doc),`${filename}-${selected.id}.pdf`);}else if(selected.id==='create-form'){const p=doc.getPage(0),field=doc.getForm().createTextField(toolText||'field-1');field.addToPage(p,{x:52,y:p.getHeight()-120,width:Math.min(300,p.getWidth()-104),height:34,borderWidth:1,borderColor:rgb(.08,.3,.48)});downloadBlob(await pdfBlob(doc),`${filename}-ฟอร์ม.pdf`);}else if(selected.id==='fill-form'){let filled=0;for(const field of doc.getForm().getFields()){const candidate=field as unknown as{setText?:(value:string)=>void};if(candidate.setText){candidate.setText(toolText);filled++;}}if(!filled)throw new Error('ไม่พบช่องข้อความใน PDF นี้');downloadBlob(await pdfBlob(doc),`${filename}-กรอกแล้ว.pdf`);}}
-      record(selected,files.reduce((sum,f)=>sum+f.size,new Blob([toolText]).size),await countProcessedPages(files));setStatus('done');setMessage('เสร็จแล้ว ไฟล์ใหม่ถูกดาวน์โหลดจากเบราว์เซอร์ของคุณ');
-    }catch(error){setStatus('error');setMessage(error instanceof Error?error.message:'ประมวลผลไม่สำเร็จ กรุณาลองไฟล์อื่น');}
+function formatBytes(bytes: number) {
+  if (!bytes) return '0 KB';
+  if (bytes < 1048576) return `${Math.max(1, bytes / 1024).toFixed(0)} KB`;
+  if (bytes < 1073741824) return `${(bytes / 1048576).toFixed(1)} MB`;
+  return `${(bytes / 1073741824).toFixed(2)} GB`;
+}
+
+/* ------------------------------------------------------------------ */
+
+/**
+ * Theme toggling with no hydration mismatch and no flash.
+ *
+ * The stored preference is applied by an inline script in `app/layout.tsx`
+ * before first paint, so React never has to know about it: both icons are
+ * rendered and CSS decides which one is visible. That keeps the server and
+ * client markup identical, which a `useState`/`useEffect` pair could not.
+ */
+function toggleTheme() {
+  const root = document.documentElement;
+  const current =
+    root.dataset.theme ??
+    (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  const next = current === 'dark' ? 'light' : 'dark';
+  root.dataset.theme = next;
+  try {
+    localStorage.setItem('mollypdf-theme', next);
+  } catch {
+    /* private mode */
+  }
+}
+
+/* ------------------------------------------------------------------ */
+
+export default function Home() {
+  const [activeCategory, setActiveCategory] = useState<(typeof categories)[number]>('ทั้งหมด');
+  const [search, setSearch] = useState('');
+  const [selected, setSelected] = useState<Tool | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
+  const [toolText, setToolText] = useState('');
+  const [toolOptions, setToolOptions] = useState<Record<string, string>>({});
+  const [signature, setSignature] = useState<SignatureValue>(null);
+  const [speechText, setSpeechText] = useState('');
+  const [state, setState] = useState<RunState>('idle');
+  const [message, setMessage] = useState('');
+  const [progress, setProgress] = useState<Progress | null>(null);
+  const [mobileMenu, setMobileMenu] = useState(false);
+  const [stats, setStats] = useState<GlobalStats>({ jobs: 0, bytes: 0, pages: 0, popular: [] });
+  const [statsReady, setStatsReady] = useState(false);
+  const abortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    fetch('/api/stats')
+      .then((response) => (response.ok ? (response.json() as Promise<GlobalStats>) : Promise.reject()))
+      .then((data) => {
+        setStats(data);
+        setStatsReady(true);
+      })
+      .catch(() => setStatsReady(false));
+  }, []);
+
+  const openTool = useCallback((tool: Tool) => {
+    setSelected(tool);
+    setFiles([]);
+    setState('idle');
+    setMessage('');
+    setProgress(null);
+    setToolText(defaults[tool.id] ?? '');
+    setToolOptions({});
+    setSignature(null);
+    setSpeechText('');
+  }, []);
+
+  // Deep link: /tools/<id> links here with ?tool=<id>, so one implementation
+  // serves both the crawlable page and the in-place dialog.
+  //
+  // This has to happen in an effect rather than in a lazy `useState`
+  // initialiser: `window.location` does not exist during the server render, so
+  // reading it at render time would make the client markup differ from the
+  // server's and break hydration. Reading an external system on mount is
+  // exactly the case the rule below is too blunt for.
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get('tool');
+    const tool = id ? toolById.get(id) : null;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (tool) openTool(tool);
+  }, [openTool]);
+
+  const filtered = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    return tools.filter(
+      (tool) =>
+        (activeCategory === 'ทั้งหมด' || tool.category === activeCategory) &&
+        (!query ||
+          `${tool.title} ${tool.description} ${tool.keywords.join(' ')}`.toLowerCase().includes(query)),
+    );
+  }, [activeCategory, search]);
+
+  const popular = useMemo(
+    () => stats.popular.map(({ toolId, count }) => ({ tool: toolById.get(toolId), count })),
+    [stats],
+  );
+
+  function record(tool: Tool, bytes: number, pages: number) {
+    fetch('/api/stats', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ toolId: tool.id, bytes, pages }),
+    })
+      .then((response) => (response.ok ? (response.json() as Promise<GlobalStats>) : Promise.reject()))
+      .then((data) => {
+        setStats(data);
+        setStatsReady(true);
+      })
+      .catch(() => undefined);
   }
 
-  return <main className="min-h-screen overflow-hidden bg-[#f7f9fc] text-[#082a4a]">
-    <header className="relative z-40 border-b border-[#dbe4ec] bg-white/90 backdrop-blur-xl"><div className="mx-auto flex h-18 max-w-[1240px] items-center justify-between px-5 lg:px-8"><a href="#top" className="flex items-center gap-2 text-xl font-black tracking-[-.05em]"><span className="grid size-9 place-items-center rounded-xl bg-[#082a4a] text-sm text-white shadow-lg">M</span><span>molly<span className="text-[#0a6e9b]">pdf</span></span></a><nav className="hidden items-center gap-8 text-sm font-bold text-[#486176] md:flex"><a href="#tools">เครื่องมือ</a><a href="#privacy">ความเป็นส่วนตัว</a><a href="#how">วิธีใช้</a><a href="#stats">สถิติบนเครื่องนี้</a></nav><div className="hidden items-center gap-2 rounded-full border border-[#cfe4df] bg-[#f2fbf8] px-3 py-2 text-xs font-extrabold text-[#087b67] sm:flex"><span className="size-2 rounded-full bg-[#10a37f] shadow-[0_0_0_4px_#dff5ef]"/>ประมวลผลในเครื่อง</div><button aria-label="เปิดเมนู" onClick={()=>setMobileMenu(!mobileMenu)} className="rounded-xl border border-[#dbe4ec] bg-white p-2 md:hidden"><Menu size={20}/></button></div>{mobileMenu&&<div className="border-t border-[#e5ebf0] bg-white px-5 py-4 text-sm font-bold md:hidden"><a href="#tools" className="block py-2">เครื่องมือ</a><a href="#privacy" className="block py-2">ความเป็นส่วนตัว</a><a href="#stats" className="block py-2">สถิติบนเครื่องนี้</a></div>}</header>
-    <section id="top" className="hero-panel relative mx-auto max-w-[1240px] px-5 pb-18 pt-12 lg:px-8 lg:pb-28 lg:pt-22"><div className="ambient ambient-left"/><div className="ambient ambient-right"/><div className="relative grid items-center gap-12 lg:grid-cols-[1.04fr_.96fr] lg:gap-16"><div><p className="mb-6 inline-flex items-center gap-2 rounded-full border border-[#cadbea] bg-[#f3f8fc] px-4 py-2 text-sm font-extrabold text-[#18527f]"><Sparkles size={15}/>พื้นที่ทำงาน PDF ที่เคารพความเป็นส่วนตัว</p><h1 className="max-w-[690px] text-balance text-[clamp(3.15rem,6.2vw,6.3rem)] font-black leading-[.95] tracking-[-0.075em]">จัดการ PDF ได้<br/><span className="headline-accent">โดยไม่ต้องส่งไฟล์ให้ใคร</span></h1><p className="mt-7 max-w-[610px] text-balance text-base leading-8 text-[#51677a] sm:text-xl sm:leading-9">รวม แยก แปลง เซ็น หรืออ่านเอกสารสำคัญให้เสร็จบนเบราว์เซอร์ของคุณ ใช้ง่าย เปิดแล้วทำได้เลย</p><div className="mt-8 flex flex-wrap gap-x-6 gap-y-3 text-xs font-extrabold text-[#496477] sm:text-sm"><span className="flex items-center gap-2"><ShieldCheck size={17} className="text-[#087b67]"/>ไฟล์อยู่บนอุปกรณ์</span><span className="flex items-center gap-2"><Zap size={17} className="text-[#0a6e9b]"/>ไม่ต้องติดตั้ง</span><span className="flex items-center gap-2"><Heart size={17} className="text-[#cc5a4a]"/>ฟรี ไม่ต้องสมัคร</span></div></div><div className="upload-stage relative"><div className="upload-shadow-card"/><button onClick={()=>openTool(tools[0])} className="upload-hero group relative block w-full rounded-[30px] border border-[#cbd9e4] bg-white/95 p-4 text-center sm:p-5"><div className="rounded-[22px] border border-[#d9e5ee] bg-[linear-gradient(145deg,#f5f9fc,#edf5fa)] px-5 py-12 sm:py-16"><span className="mx-auto grid size-16 place-items-center rounded-2xl bg-[#082a4a] text-white shadow-xl transition group-hover:-translate-y-1"><Upload size={28}/></span><strong className="mt-6 block text-xl sm:text-2xl">เริ่มจากไฟล์ของคุณ</strong><span className="mt-2 block text-sm text-[#64798a]">เลือกเครื่องมือ แล้วเปิดไฟล์จากอุปกรณ์</span></div><span className="mt-4 flex items-center justify-center gap-2 text-xs font-extrabold text-[#526d7f]"><span className="grid size-5 place-items-center rounded-full bg-[#e7f6f1] text-[#087b67]"><Check size={13}/></span>เอกสารไม่ถูกส่งไปประมวลผลบนเซิร์ฟเวอร์</span></button><div className="local-note"><span className="local-note-dot"/>0 ไบต์ออกจากเครื่อง</div></div></div></section>
-    <section id="tools" className="bg-white py-22"><div className="mx-auto max-w-[1200px] px-5 lg:px-8"><div className="flex flex-col justify-between gap-7 lg:flex-row lg:items-end"><div><p className="eyebrow">43 เครื่องมือในพื้นที่เดียว</p><h2 className="section-title mt-2">เลือกงานที่ต้องทำ แล้วลงมือได้เลย</h2><p className="mt-3 max-w-2xl text-[#607589]">ตั้งแต่งานหน้าเอกสารไปจนถึง OCR ภาษาไทย ทุกขั้นตอนทำบนอุปกรณ์ ฟังก์ชันที่ต้องใช้เอนจินเฉพาะจะบอกไว้อย่างชัดเจน</p></div><label className="flex h-12 w-full items-center gap-3 rounded-2xl border border-[#d9e3eb] bg-[#f7f9fb] px-4 text-[#718397] focus-within:border-[#7aa8c7] lg:w-[320px]"><Search size={18}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="ค้นหาเครื่องมือ…" className="min-w-0 flex-1 bg-transparent text-sm text-[#082a4a] outline-none"/></label></div><div className="hide-scrollbar mt-10 flex gap-2 overflow-x-auto pb-2">{categories.map(c=><button key={c} onClick={()=>setActiveCategory(c)} className={`whitespace-nowrap rounded-full px-4 py-2.5 text-sm font-extrabold transition ${activeCategory===c?'bg-[#082a4a] text-white shadow-lg':'border border-[#dce5ec] bg-white text-[#566e82]'}`}>{c}</button>)}</div><div className="mt-7 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">{filtered.map((tool,index)=>{const Icon=tool.icon;return <button key={tool.id} onClick={()=>openTool(tool)} className={`tool-card group relative min-h-[180px] rounded-[22px] border bg-white p-5 text-left ${index<4?'featured-tool':''}`}>{tool.badge&&<span className={`absolute right-4 top-4 rounded-full px-2.5 py-1 text-[10px] font-black ${tool.working?'bg-[#eaf6f4] text-[#087b67]':'bg-[#eef2f5] text-[#66798b]'}`}>{tool.badge}</span>}<span className={`tool-icon tool-${tool.color}`}><Icon size={21}/></span><strong className="mt-5 block text-[17px]">{tool.title}</strong><span className="mt-1.5 block pr-3 text-sm leading-5 text-[#6a7c8d]">{tool.description}</span><ArrowRight size={17} className="absolute bottom-5 right-5 text-[#0a6e9b] opacity-0 transition group-hover:opacity-100"/></button>})}</div>{!filtered.length&&<div className="py-20 text-center text-[#74869a]"><Search className="mx-auto mb-3"/>ไม่พบเครื่องมือที่ค้นหา</div>}</div></section>
-    <section id="privacy" className="relative overflow-hidden bg-[#061f35] py-25 text-white"><div className="privacy-grid"/><div className="relative mx-auto grid max-w-[1200px] items-center gap-14 px-5 lg:grid-cols-[1fr_.9fr] lg:px-8"><div><p className="inline-flex items-center gap-2 text-sm font-extrabold text-[#6ed8c2]"><ShieldCheck size={18}/>ความเป็นส่วนตัวที่อธิบายได้</p><h2 className="mt-5 text-balance text-4xl font-black leading-tight tracking-[-.045em] sm:text-5xl">เปิดไฟล์เพื่อทำงาน<br/>ไม่ใช่ส่งไฟล์ไปฝากไว้</h2><p className="mt-6 max-w-xl text-base leading-8 text-[#bed0df]">เบราว์เซอร์อ่านข้อมูลชั่วคราวและสร้างผลลัพธ์บนอุปกรณ์ของคุณเอง ไม่มี API รับไฟล์ ไม่มีคลาวด์เก็บเอกสาร และไม่มีข้อมูลเอกสารถูกนำไปวิเคราะห์</p><div className="mt-8 flex flex-wrap gap-3"><span className="privacy-pill"><Check size={15}/>ไม่ต้องมีบัญชี</span><span className="privacy-pill"><Check size={15}/>ไม่มีพื้นที่เก็บไฟล์</span><span className="privacy-pill"><Check size={15}/>สถิติเก็บในเครื่อง</span></div></div><div className="privacy-console"><div className="privacy-doc"><div className="flex items-center justify-between"><span className="flex items-center gap-2 text-sm font-black"><span className="grid size-9 place-items-center rounded-xl bg-[#e6f5f2] text-[#087b67]"><FileText size={18}/></span>เอกสารของฉัน.pdf</span><span className="text-xs font-bold text-[#74869a]">2.4 MB</span></div><div className="mt-8 flex items-center gap-3"><span className="h-2 flex-1 overflow-hidden rounded-full bg-[#dce6ec]"><span className="block h-full w-full rounded-full bg-[#10a37f]"/></span><CheckCircle2 size={20} className="text-[#10a37f]"/></div><div className="mt-3 flex items-center justify-between text-xs font-extrabold"><span>พร้อมดาวน์โหลด</span><span className="text-[#087b67]">สร้างบนเครื่องนี้</span></div></div><div className="mt-4 flex items-center justify-center gap-3 rounded-[18px] border border-white/10 px-4 py-5 text-sm font-extrabold text-[#d7e5ee]"><LockKeyhole size={19}/>0 ไบต์ถูกส่งออกนอกเครื่อง</div></div></div></section>
-    <section id="how" className="bg-[#f7f9fc] py-24"><div className="mx-auto max-w-[1200px] px-5 lg:px-8"><div className="text-center"><p className="eyebrow">สามจังหวะก็เสร็จ</p><h2 className="section-title mt-2">ไม่ต้องเรียนระบบใหม่ ไม่ต้องติดตั้งอะไรเพิ่ม</h2></div><div className="mt-14 grid gap-5 md:grid-cols-3">{[['01','เลือกเครื่องมือ','ค้นหางานที่ต้องการจากหมวดที่จัดไว้ชัดเจน'],['02','เปิดไฟล์จากอุปกรณ์','ไฟล์ถูกอ่านชั่วคราวภายในแท็บนี้เท่านั้น'],['03','รับไฟล์ใหม่ทันที','ดาวน์โหลดผลลัพธ์ แล้วปิดแท็บได้อย่างสบายใจ']].map(([n,t,d])=><div key={n} className="step-card"><span>{n}</span><h3>{t}</h3><p>{d}</p></div>)}</div></div></section>
-    <section id="stats" className="bg-white px-5 py-22 lg:px-8"><div className="stats-wrap mx-auto max-w-[1136px]"><div className="grid gap-8 lg:grid-cols-[.9fr_1.1fr]"><div><p className="eyebrow flex items-center gap-2"><BarChart3 size={16}/>สถิติรวมจากผู้ใช้งานทุกคน</p><h2 className="mt-3 text-4xl font-black tracking-[-.05em] sm:text-5xl">ทุกครั้งที่ใช้งาน<br/>ช่วยให้ตัวเลขนี้เติบโต</h2><p className="mt-4 max-w-md leading-7 text-[#607589]">mollypdf ส่งเฉพาะรหัสเครื่องมือ ขนาดไฟล์ และจำนวนหน้าไปบวกเป็นยอดรวม ไม่มีชื่อไฟล์ เนื้อหาเอกสาร หรือไฟล์แม้แต่ไบต์เดียวถูกส่งไปเก็บ</p><div className="eco-note"><span className="eco-note-icon">ใบ</span><div><strong>ภาพรวมของการทำงานแบบดิจิทัล</strong><p>จำนวนหน้าช่วยประมาณว่าเอกสารถูกจัดการบนหน้าจอแทนการพิมพ์ซ้ำได้มากเพียงใด</p></div></div></div><div className="grid gap-3 sm:grid-cols-2"><div className="stat-card"><span>งานที่ผู้ใช้ทำเสร็จทั้งหมด</span><strong>{globalStats.jobs.toLocaleString('th-TH')}</strong><small>{globalStatsReady?'ยอดรวมจากทุกอุปกรณ์':'กำลังเชื่อมต่อสถิติรวม…'}</small></div><div className="stat-card"><span>ขนาดไฟล์ที่ประมวลผลรวม</span><strong>{formatBytes(globalStats.bytes)}</strong><small>เก็บเฉพาะตัวเลขขนาดไฟล์</small></div><div className="stat-card stat-card-eco"><span>หน้าที่จัดการแบบดิจิทัลรวม</span><strong>{globalStats.pages.toLocaleString('th-TH')}</strong><small>อาจช่วยลดการพิมพ์ซ้ำได้สูงสุด {globalStats.pages.toLocaleString('th-TH')} แผ่น</small></div><div className="stat-card"><span>เนื้อหาไฟล์ที่เก็บบนเซิร์ฟเวอร์</span><strong>0 B</strong><small>ไม่มีการส่งหรือจัดเก็บไฟล์เอกสาร</small></div></div></div>{popular.length>0&&<div className="mt-8 border-t border-[#dce5ec] pt-6"><p className="text-xs font-black uppercase tracking-[.14em] text-[#718397]">เครื่องมือยอดนิยมจากผู้ใช้ทั้งหมด</p><div className="mt-4 flex flex-wrap gap-3">{popular.map(({tool,count},i)=>tool&&<button key={tool.id} onClick={()=>openTool(tool)} className="popular-chip"><span>{i+1}</span>{tool.title}<small>{count} ครั้ง</small></button>)}</div></div>}</div></section>
-    <section className="bg-white px-5 pb-20 lg:px-8"><div className="cta-panel mx-auto flex max-w-[1136px] flex-col items-center justify-between gap-7 px-7 py-10 text-center text-white sm:px-12 md:flex-row md:text-left"><div><h2 className="text-3xl font-black tracking-[-.04em]">เอกสารสำคัญควรอยู่ใกล้มือ ไม่ใช่บนเซิร์ฟเวอร์คนอื่น</h2><p className="mt-2 text-sm text-white/75 sm:text-base">เปิดใช้ได้ทันที ฟรี และไม่ต้องสร้างบัญชี</p></div><button onClick={()=>openTool(tools[0])} className="flex shrink-0 items-center gap-2 rounded-2xl bg-white px-6 py-3.5 text-sm font-black text-[#082a4a] shadow-lg">เลือกเครื่องมือ <ArrowRight size={17}/></button></div></section>
-    <footer className="border-t border-[#dce5ec] bg-white"><div className="mx-auto flex max-w-[1200px] flex-col items-center justify-between gap-5 px-5 py-8 text-center text-xs font-bold text-[#718397] sm:flex-row lg:px-8"><div className="flex items-center gap-2 text-base font-black text-[#082a4a]"><span className="grid size-7 place-items-center rounded-lg bg-[#082a4a] text-xs text-white">M</span>mollypdf</div><p>ความสะดวกควรเดินไปพร้อมกับความเป็นส่วนตัว</p><p>© 2026 mollypdf</p></div></footer>
-    {selected&&<div className="fixed inset-0 z-50 flex items-end justify-center bg-[#061f35]/70 backdrop-blur-sm sm:items-center sm:p-5" onMouseDown={e=>{if(e.currentTarget===e.target)setSelected(null)}}><section role="dialog" aria-modal="true" aria-label={selected.title} className="max-h-[92vh] w-full max-w-[620px] overflow-auto rounded-t-[28px] bg-white shadow-2xl sm:rounded-[28px]"><div className="flex items-center justify-between border-b border-[#e1e8ee] px-5 py-4 sm:px-7"><div className="flex items-center gap-3"><span className={`tool-icon tool-${selected.color}`}><selected.icon size={20}/></span><div><h2 className="font-black">{selected.title}</h2><p className="text-xs text-[#718397]">{selected.description}</p></div></div><button onClick={()=>setSelected(null)} aria-label="ปิด" className="rounded-xl p-2 text-[#64798a]"><X size={20}/></button></div><div className="p-5 sm:p-7">{!selected.working&&<div className="mb-4 flex gap-3 rounded-2xl border border-[#d5e0e8] bg-[#f4f7f9] p-4 text-sm leading-6 text-[#4d6578]"><Sparkles size={19} className="mt-0.5 shrink-0 text-[#0a6e9b]"/><span><strong className="block text-[#082a4a]">ต้องใช้เอนจินเฉพาะทาง</strong>เรายังไม่เปิดปุ่มประมวลผลจนกว่าจะตรวจรับรองผลลัพธ์ได้จริง</span></div>}{!textTools.includes(selected.id)&&<div onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();acceptFiles([...e.dataTransfer.files])}} onClick={()=>inputRef.current?.click()} className="cursor-pointer rounded-[22px] border-2 border-dashed border-[#aec7d9] bg-[#f4f8fb] px-5 py-8 text-center"><input ref={inputRef} type="file" accept={selected.accept??'application/pdf'} multiple={selected.multiple} onChange={e=>acceptFiles([...(e.target.files??[])])} className="hidden"/><Upload className="mx-auto text-[#0a6e9b]" size={28}/><strong className="mt-3 block">{files.length?'เพิ่มหรือเปลี่ยนไฟล์':selected.id==='compare'?'เลือก PDF 2 ไฟล์':'เลือกไฟล์จากเครื่อง'}</strong><span className="mt-1 block text-xs text-[#718397]">ลากมาวางตรงนี้ก็ได้ · ไฟล์จะไม่ถูกอัปโหลด</span></div>}{files.length>0&&<div className="mt-4 max-h-32 space-y-2 overflow-auto">{files.map(f=><div key={`${f.name}-${f.size}`} className="flex items-center justify-between rounded-xl border border-[#dce5ec] px-3 py-2.5 text-sm"><span className="flex min-w-0 items-center gap-2"><FileText size={17} className="shrink-0 text-[#0a6e9b]"/><span className="truncate font-bold">{f.name}</span></span><span className="ml-3 shrink-0 text-xs text-[#8090a0]">{formatBytes(f.size)}</span></div>)}</div>}{inputLabels[selected.id]&&<label className="mt-4 block text-sm font-extrabold">{inputLabels[selected.id]}{textTools.includes(selected.id)?<textarea value={toolText} onChange={e=>setToolText(e.target.value)} rows={6} placeholder={selected.id==='html-pdf'?'<h1>หัวข้อ</h1><p>เนื้อหา</p>':'พิมพ์หรือวางข้อความที่นี่'} className="mt-2 w-full rounded-xl border border-[#d5e0e8] px-3 py-3 font-normal outline-none"/>:<input type={['protect','unlock'].includes(selected.id)?'password':'text'} value={toolText} onChange={e=>setToolText(e.target.value)} placeholder={['organize','remove-pages','extract-pages'].includes(selected.id)?'เช่น 1, 3-5, 2':'พิมพ์ที่นี่'} className="mt-2 h-11 w-full rounded-xl border border-[#d5e0e8] px-3 font-normal outline-none"/>}</label>}{selected.id==='ocr'&&<p className="mt-3 text-xs leading-5 text-[#718397]">ครั้งแรกจะดาวน์โหลดโมเดลภาษาไทยจาก Tesseract.js แต่ภาพเอกสารไม่ถูกส่งออกไป</p>}{selected.id==='redact'&&<p className="mt-3 text-xs leading-5 text-[#9a4e47]">ผลลัพธ์จะถูกแปลงเป็นภาพเพื่อตัดข้อความต้นฉบับออก โปรดตรวจไฟล์ก่อนใช้</p>}{status!=='idle'&&<div className={`mt-4 flex items-center gap-2 rounded-xl px-4 py-3 text-sm font-bold ${status==='error'?'bg-[#fff0ed] text-[#a7493d]':status==='done'?'bg-[#eaf8f4] text-[#087b67]':'bg-[#eef3f6] text-[#526a7c]'}`}>{status==='processing'?<LoaderCircle size={17} className="animate-spin"/>:status==='done'?<CheckCircle2 size={17}/>:<X size={17}/>} {message}</div>}<button disabled={(!files.length&&!textTools.includes(selected.id))||status==='processing'} onClick={runTool} className="mt-5 flex h-13 w-full items-center justify-center gap-2 rounded-2xl bg-[#082a4a] px-5 text-sm font-black text-white shadow-lg disabled:opacity-45">{status==='processing'?<LoaderCircle size={18} className="animate-spin"/>:selected.working?<Zap size={18}/>:<Sparkles size={18}/>} {selected.working?`เริ่ม${selected.title}`:'ดูรายละเอียดเอนจิน'}</button><p className="mt-4 flex items-center justify-center gap-1.5 text-[11px] font-bold text-[#718397]"><ShieldCheck size={14} className="text-[#087b67]"/>ประมวลผลในเบราว์เซอร์ · ไม่มีไฟล์ถูกส่งออก</p></div></section></div>}
-  </main>;
+  /** Read-aloud is a live control surface, so it loads its text up front. */
+  async function loadSpeechText() {
+    if (!selected || !files.length) return;
+    const controller = new AbortController();
+    abortRef.current = controller;
+    setState('processing');
+    setMessage('กำลังอ่านข้อความจากเอกสาร…');
+    try {
+      const { text, pages } = await extractForSpeech(files[0], {
+        signal: controller.signal,
+        report: setProgress,
+      });
+      setSpeechText(text);
+      setState('idle');
+      setMessage('');
+      record(selected, files[0].size, pages);
+    } catch (error) {
+      if (error instanceof CancelledError) {
+        setState('idle');
+        setMessage('');
+      } else {
+        setState('error');
+        setMessage(error instanceof Error ? error.message : 'อ่านข้อความไม่สำเร็จ');
+      }
+    } finally {
+      abortRef.current = null;
+      setProgress(null);
+    }
+  }
+
+  async function handleRun() {
+    if (!selected) return;
+    const controller = new AbortController();
+    abortRef.current = controller;
+    setState('processing');
+    setProgress({ ratio: null, label: 'กำลังเริ่ม' });
+    setMessage('กำลังประมวลผลบนอุปกรณ์ของคุณ…');
+
+    const options = { ...toolOptions };
+    if (selected.id === 'sign' && signature) {
+      options.signatureImage = signature.dataUrl;
+      options.signatureWidth = String(signature.width);
+      options.signatureHeight = String(signature.height);
+    }
+    const input: ToolInput = { files, text: toolText, options };
+
+    try {
+      const result = await runTool(selected.id, input, {
+        signal: controller.signal,
+        report: setProgress,
+      });
+      setState('done');
+      setMessage(result.message);
+      record(selected, result.bytes, result.pages);
+    } catch (error) {
+      if (error instanceof CancelledError) {
+        setState('idle');
+        setMessage('');
+      } else {
+        setState('error');
+        setMessage(error instanceof Error ? error.message : 'ประมวลผลไม่สำเร็จ กรุณาลองไฟล์อื่น');
+      }
+    } finally {
+      abortRef.current = null;
+      setProgress(null);
+    }
+  }
+
+  return (
+    <>
+      <header className="sticky top-0 z-40 border-b border-line bg-card/90 backdrop-blur-xl">
+        <div className="mx-auto flex h-16 max-w-[var(--content)] items-center justify-between gap-4 px-5 lg:px-8">
+          <Link href="/" className="flex items-center gap-2 text-lg font-bold tracking-tight text-strong">
+            <span className="grid size-9 place-items-center rounded-xl bg-[color:var(--surface-inverse)] text-sm text-white">M</span>
+            <span>molly<span className="text-brand">pdf</span></span>
+          </Link>
+
+          <nav aria-label="เมนูหลัก" className="hidden items-center gap-7 text-sm font-medium text-muted md:flex">
+            <a href="#tools" className="hover:text-brand">เครื่องมือ</a>
+            <Link href="/privacy" className="hover:text-brand">ความเป็นส่วนตัว</Link>
+            <a href="#how" className="hover:text-brand">วิธีใช้</a>
+            {/* Was "สถิติบนเครื่องนี้", which contradicted the section it linked to. */}
+            <a href="#stats" className="hover:text-brand">สถิติการใช้งาน</a>
+          </nav>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={toggleTheme}
+              className="rounded-xl border border-line p-2 text-muted hover:bg-sunken"
+            >
+              <Moon size={18} aria-hidden="true" className="theme-icon-light" />
+              <Sun size={18} aria-hidden="true" className="theme-icon-dark" />
+              <span className="sr-only">สลับโหมดสว่าง/มืด</span>
+            </button>
+            <button
+              type="button"
+              aria-expanded={mobileMenu}
+              aria-controls="mobile-menu"
+              onClick={() => setMobileMenu(!mobileMenu)}
+              className="rounded-xl border border-line p-2 text-muted md:hidden"
+            >
+              {mobileMenu ? <X size={18} aria-hidden="true" /> : <Menu size={18} aria-hidden="true" />}
+              <span className="sr-only">{mobileMenu ? 'ปิดเมนู' : 'เปิดเมนู'}</span>
+            </button>
+          </div>
+        </div>
+
+        {mobileMenu && (
+          <nav id="mobile-menu" aria-label="เมนูบนมือถือ" className="border-t border-line bg-card px-5 py-3 text-sm font-medium md:hidden">
+            {/* The old mobile menu was missing "วิธีใช้" and never closed on tap. */}
+            {[['#tools', 'เครื่องมือ'], ['/privacy', 'ความเป็นส่วนตัว'], ['#how', 'วิธีใช้'], ['#stats', 'สถิติการใช้งาน']].map(
+              ([href, label]) => (
+                <a key={href} href={href} onClick={() => setMobileMenu(false)} className="block py-2.5 text-body">
+                  {label}
+                </a>
+              ),
+            )}
+          </nav>
+        )}
+      </header>
+
+      <main id="main">
+        {/* ───────────── hero ───────────── */}
+        <section className="mx-auto max-w-[var(--content)] px-5 pb-14 pt-10 lg:px-8 lg:pb-20 lg:pt-16">
+          <div className="grid items-center gap-12 lg:grid-cols-[1.05fr_.95fr] lg:gap-16">
+            <div>
+              <p className="chip">
+                <ShieldCheck size={15} className="text-[color:var(--ok)]" aria-hidden="true" />
+                พื้นที่ทำงาน PDF ที่เคารพความเป็นส่วนตัว
+              </p>
+              {/* No max-width in ch: Thai has no spaces, so the browser can only
+                  break at the points we give it. Two deliberate lines beat a
+                  measure that forces a break mid-clause. */}
+              <h1 className="display mt-6 text-balance">
+                จัดการ PDF ได้
+                <br />
+                <span className="headline-accent">โดยไม่ต้องอัปโหลด</span>
+              </h1>
+              <p className="lede mt-6 max-w-[52ch] text-balance">
+                รวม แยก แปลง เซ็น หรืออ่านเอกสารสำคัญให้เสร็จในเบราว์เซอร์ของคุณ
+                เนื้อหาไฟล์ไม่ถูกส่งไปที่เซิร์ฟเวอร์ไหนทั้งสิ้น
+              </p>
+              <div className="mt-7 flex flex-wrap gap-x-6 gap-y-3 text-sm font-medium text-muted">
+                <span className="flex items-center gap-2">
+                  <ShieldCheck size={16} className="text-[color:var(--ok)]" aria-hidden="true" />ไฟล์อยู่บนอุปกรณ์
+                </span>
+                <span className="flex items-center gap-2">
+                  <Zap size={16} className="text-brand" aria-hidden="true" />ไม่ต้องติดตั้ง
+                </span>
+                <span className="flex items-center gap-2">
+                  <Heart size={16} className="text-[color:var(--danger)]" aria-hidden="true" />ฟรี ไม่ต้องสมัคร
+                </span>
+              </div>
+              <div className="mt-9 flex flex-wrap gap-3">
+                <button type="button" onClick={() => openTool(readyTools[0])} className="btn-primary">
+                  เริ่มจากรวมไฟล์ PDF <ArrowRight size={17} aria-hidden="true" />
+                </button>
+                <a href="#tools" className="chip px-5 py-3.5 hover:border-[color:var(--line-strong)]">
+                  ดูทั้ง {readyTools.length} เครื่องมือ
+                </a>
+              </div>
+            </div>
+
+            <div className="surface-card p-4 sm:p-5" style={{ boxShadow: 'var(--shadow-4)' }}>
+              <button
+                type="button"
+                onClick={() => openTool(readyTools[0])}
+                className="group block w-full rounded-[22px] border border-line bg-sunken px-5 py-12 text-center"
+              >
+                <span className="mx-auto grid size-16 place-items-center rounded-2xl bg-[color:var(--surface-inverse)] text-white transition group-hover:-translate-y-1">
+                  <Upload size={26} aria-hidden="true" />
+                </span>
+                <strong className="mt-6 block text-xl font-semibold text-strong">เริ่มจากไฟล์ของคุณ</strong>
+                <span className="mt-2 block text-sm text-muted">เลือกเครื่องมือ แล้วเปิดไฟล์จากอุปกรณ์</span>
+              </button>
+              <p className="mt-4 flex items-center justify-center gap-2 text-xs font-medium text-muted">
+                <span className="grid size-5 place-items-center rounded-full bg-[color:var(--ok-soft)] text-[color:var(--ok)]">
+                  <Check size={12} aria-hidden="true" />
+                </span>
+                เอกสารไม่ถูกส่งไปประมวลผลบนเซิร์ฟเวอร์
+              </p>
+            </div>
+          </div>
+        </section>
+
+        {/* ───────────── tools ───────────── */}
+        <section id="tools" className="bg-card py-20">
+          <div className="mx-auto max-w-[var(--content)] px-5 lg:px-8">
+            <div className="flex flex-col justify-between gap-6 lg:flex-row lg:items-end">
+              <div>
+                <p className="eyebrow">{readyTools.length} เครื่องมือในพื้นที่เดียว</p>
+                <h2 className="section-title mt-2">เลือกงานที่ต้องทำ แล้วลงมือได้เลย</h2>
+                <p className="lede mt-3 max-w-[58ch]">
+                  ตั้งแต่งานหน้าเอกสารไปจนถึง OCR ภาษาไทย ทุกขั้นตอนทำบนอุปกรณ์ของคุณ
+                </p>
+              </div>
+              <div className="lg:w-[320px]">
+                <label htmlFor="tool-search" className="sr-only">ค้นหาเครื่องมือ</label>
+                <div className="flex h-12 items-center gap-3 rounded-2xl border border-line bg-sunken px-4 text-muted focus-within:border-[color:var(--brand-ring)]">
+                  <Search size={18} aria-hidden="true" />
+                  <input
+                    id="tool-search"
+                    type="search"
+                    value={search}
+                    onChange={(event) => setSearch(event.target.value)}
+                    placeholder="ค้นหาเครื่องมือ…"
+                    className="min-w-0 flex-1 bg-transparent text-sm text-strong outline-none"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="hide-scrollbar mt-8 flex gap-2 overflow-x-auto pb-2" role="tablist" aria-label="หมวดเครื่องมือ">
+              {categories.map((category) => (
+                <button
+                  key={category}
+                  type="button"
+                  role="tab"
+                  aria-selected={activeCategory === category}
+                  onClick={() => setActiveCategory(category)}
+                  className={`whitespace-nowrap rounded-full px-4 py-2.5 text-sm font-medium transition ${
+                    activeCategory === category
+                      ? 'bg-[color:var(--action-bg)] text-[color:var(--action-fg)]'
+                      : 'border border-line bg-card text-muted hover:border-[color:var(--line-strong)]'
+                  }`}
+                >
+                  {category}
+                </button>
+              ))}
+            </div>
+
+            <ul className="mt-7 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {filtered.map((tool) => (
+                <li key={tool.id}>
+                  {/* A real link: crawlable, middle-clickable, and still opens
+                      the dialog in place on a plain left click. */}
+                  <Link
+                    href={`/tools/${tool.id}`}
+                    onClick={(event) => {
+                      if (event.metaKey || event.ctrlKey || event.shiftKey) return;
+                      event.preventDefault();
+                      openTool(tool);
+                    }}
+                    className="tool-card block h-full min-h-[176px] p-5"
+                  >
+                    {tool.badge && (
+                      <span
+                        className={`absolute right-4 top-4 rounded-full px-2.5 py-1 text-[11px] font-medium ${
+                          tool.status === 'ready'
+                            ? 'bg-[color:var(--ok-soft)] text-[color:var(--ok)]'
+                            : 'bg-sunken text-subtle'
+                        }`}
+                      >
+                        {tool.badge}
+                      </span>
+                    )}
+                    <span className={`tool-icon tool-${tool.color}`} aria-hidden="true">
+                      <tool.icon size={20} />
+                    </span>
+                    <h3 className="mt-5">{tool.title}</h3>
+                    <p className="mt-1.5 pr-4">{tool.description}</p>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+
+            {!filtered.length && (
+              <p className="py-20 text-center text-muted">ไม่พบเครื่องมือที่ค้นหา — ลองคำอื่น เช่น &ldquo;รวม&rdquo; หรือ &ldquo;ocr&rdquo;</p>
+            )}
+          </div>
+        </section>
+
+        {/* ───────────── privacy ───────────── */}
+        <section className="relative overflow-hidden bg-[color:var(--surface-inverse)] py-24 text-[color:var(--text-on-inverse)]">
+          <div className="mx-auto grid max-w-[var(--content)] items-center gap-14 px-5 lg:grid-cols-[1fr_.85fr] lg:px-8">
+            <div>
+              <p className="flex items-center gap-2 text-sm font-semibold text-[color:var(--ok)]">
+                <ShieldCheck size={18} aria-hidden="true" />ความเป็นส่วนตัวที่อธิบายได้
+              </p>
+              <h2 className="section-title mt-5 text-[color:var(--text-on-inverse)]">
+                เปิดไฟล์เพื่อทำงาน<br />ไม่ใช่ส่งไฟล์ไปฝากไว้
+              </h2>
+              <p className="mt-6 max-w-[54ch] leading-8 text-[color:var(--text-on-inverse-muted)]">
+                เบราว์เซอร์อ่านข้อมูลชั่วคราวและสร้างผลลัพธ์บนอุปกรณ์ของคุณเอง
+                ไม่มี API รับไฟล์ ไม่มีคลาวด์เก็บเอกสาร และไม่มีเนื้อหาเอกสารถูกนำไปวิเคราะห์
+              </p>
+              <div className="mt-8 flex flex-wrap gap-3">
+                {['ไม่ต้องมีบัญชี', 'ไม่มีพื้นที่เก็บไฟล์', 'ไม่มีคุกกี้ติดตาม'].map((item) => (
+                  <span
+                    key={item}
+                    className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3.5 py-2 text-sm"
+                  >
+                    <Check size={14} aria-hidden="true" />
+                    {item}
+                  </span>
+                ))}
+              </div>
+              {/* The honest version of the old "0 ไบต์" claim. */}
+              <Link
+                href="/privacy"
+                className="mt-8 inline-flex items-center gap-2 text-sm font-semibold text-[color:var(--ok)] underline underline-offset-4"
+              >
+                ดูรายการคำขอเครือข่ายทั้งหมดที่เราทำ <ArrowRight size={15} aria-hidden="true" />
+              </Link>
+            </div>
+
+            <div className="rounded-[28px] border border-white/12 bg-white/6 p-5 backdrop-blur">
+              <div className="rounded-[20px] bg-[color:var(--surface-card)] p-6 text-body">
+                <p className="text-sm font-semibold text-strong">สิ่งที่ออกจากเครื่องคุณ</p>
+                <dl className="mt-4 space-y-3 text-sm">
+                  {[
+                    ['เนื้อหาเอกสาร', 'ไม่ส่ง'],
+                    ['ชื่อไฟล์', 'ไม่ส่ง'],
+                    ['รหัสผ่านที่คุณตั้ง', 'ไม่ส่ง'],
+                    ['รหัสเครื่องมือ + ขนาดไฟล์ + จำนวนหน้า', 'ส่งไปนับยอดรวม'],
+                  ].map(([key, value]) => (
+                    <div key={key} className="flex items-start justify-between gap-4 border-b border-line pb-3 last:border-0">
+                      <dt className="text-muted">{key}</dt>
+                      <dd className={`shrink-0 font-semibold ${value === 'ไม่ส่ง' ? 'text-[color:var(--ok)]' : 'text-muted'}`}>
+                        {value}
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* ───────────── how ───────────── */}
+        <section id="how" className="py-20">
+          <div className="mx-auto max-w-[var(--content)] px-5 lg:px-8">
+            <div className="text-center">
+              <p className="eyebrow">สามจังหวะก็เสร็จ</p>
+              <h2 className="section-title mt-2">ไม่ต้องเรียนระบบใหม่ ไม่ต้องติดตั้งอะไรเพิ่ม</h2>
+            </div>
+            <ol className="mt-12 grid gap-5 md:grid-cols-3">
+              {[
+                ['01', 'เลือกเครื่องมือ', 'ค้นหางานที่ต้องการจากหมวดที่จัดไว้ชัดเจน'],
+                ['02', 'เปิดไฟล์จากอุปกรณ์', 'ไฟล์ถูกอ่านชั่วคราวภายในแท็บนี้เท่านั้น'],
+                ['03', 'รับไฟล์ใหม่ทันที', 'ดาวน์โหลดผลลัพธ์ แล้วปิดแท็บได้อย่างสบายใจ'],
+              ].map(([n, title, body]) => (
+                <li key={n} className="step-card">
+                  <span aria-hidden="true">{n}</span>
+                  <h3>{title}</h3>
+                  <p>{body}</p>
+                </li>
+              ))}
+            </ol>
+          </div>
+        </section>
+
+        {/* ───────────── stats ───────────── */}
+        <section id="stats" className="bg-card px-5 py-20 lg:px-8">
+          <div className="mx-auto max-w-[1136px] rounded-[var(--radius-xl)] border border-line bg-sunken p-7 sm:p-12">
+            <div className="grid gap-8 lg:grid-cols-[.9fr_1.1fr]">
+              <div>
+                <p className="eyebrow flex items-center gap-2">
+                  <BarChart3 size={16} aria-hidden="true" />สถิติรวมจากผู้ใช้งานทุกคน
+                </p>
+                <h2 className="section-title mt-3">ทุกครั้งที่ใช้งาน ช่วยให้ตัวเลขนี้เติบโต</h2>
+                <p className="lede mt-4 max-w-[44ch]">
+                  เราส่งเฉพาะรหัสเครื่องมือ ขนาดไฟล์ และจำนวนหน้าไปบวกเป็นยอดรวม
+                  ไม่มีชื่อไฟล์ เนื้อหาเอกสาร หรือไฟล์แม้แต่ไบต์เดียวถูกส่งไปเก็บ
+                </p>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="stat-card">
+                  <span>งานที่ผู้ใช้ทำเสร็จทั้งหมด</span>
+                  <strong>{stats.jobs.toLocaleString('th-TH')}</strong>
+                  <small>{statsReady ? 'ยอดรวมจากทุกอุปกรณ์' : 'กำลังเชื่อมต่อสถิติรวม…'}</small>
+                </div>
+                <div className="stat-card">
+                  <span>ขนาดไฟล์ที่ประมวลผลรวม</span>
+                  <strong>{formatBytes(stats.bytes)}</strong>
+                  <small>เก็บเฉพาะตัวเลขขนาดไฟล์</small>
+                </div>
+                <div className="stat-card">
+                  <span>หน้าที่จัดการแบบดิจิทัลรวม</span>
+                  <strong>{stats.pages.toLocaleString('th-TH')}</strong>
+                  <small>อาจช่วยลดการพิมพ์ซ้ำได้</small>
+                </div>
+                <div className="stat-card">
+                  <span>เนื้อหาไฟล์ที่เก็บบนเซิร์ฟเวอร์</span>
+                  <strong>0 B</strong>
+                  <small>ไม่มีการส่งหรือจัดเก็บไฟล์เอกสาร</small>
+                </div>
+              </div>
+            </div>
+
+            {popular.length > 0 && (
+              <div className="mt-8 border-t border-line pt-6">
+                <p className="eyebrow">เครื่องมือยอดนิยม</p>
+                <div className="mt-4 flex flex-wrap gap-3">
+                  {popular.map(({ tool, count }, index) =>
+                    tool ? (
+                      <button key={tool.id} type="button" onClick={() => openTool(tool)} className="chip">
+                        <span className="grid size-6 place-items-center rounded-full bg-[color:var(--surface-inverse)] text-[10px] text-white">
+                          {index + 1}
+                        </span>
+                        {tool.title}
+                        <small className="text-subtle">{count} ครั้ง</small>
+                      </button>
+                    ) : null,
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </section>
+      </main>
+
+      <footer className="border-t border-line bg-card">
+        <div className="mx-auto flex max-w-[var(--content)] flex-col items-center justify-between gap-5 px-5 py-8 text-center text-sm text-muted sm:flex-row sm:text-start lg:px-8">
+          <div className="flex items-center gap-2 font-bold text-strong">
+            <span className="grid size-7 place-items-center rounded-lg bg-[color:var(--surface-inverse)] text-xs text-white">M</span>
+            mollypdf
+          </div>
+          <nav aria-label="ลิงก์ท้ายหน้า" className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2">
+            <Link href="/privacy" className="hover:text-brand">ความเป็นส่วนตัว</Link>
+            <a href="#tools" className="hover:text-brand">เครื่องมือทั้งหมด</a>
+          </nav>
+          <p className="text-subtle">© {new Date().getFullYear()} mollypdf</p>
+        </div>
+      </footer>
+
+      {selected && (
+        <ToolDialog
+          tool={selected}
+          files={files}
+          fileless={FILELESS.has(selected.id)}
+          onFiles={(incoming) => {
+            // Adding to a merge list should extend it, not throw away what is
+            // already there — and the same file must not land twice.
+            setFiles((current) => {
+              if (!selected.multiple) return incoming.slice(0, 1);
+              const seen = new Set(current.map((f) => `${f.name}:${f.size}:${f.lastModified}`));
+              const added = incoming.filter(
+                (f) => !seen.has(`${f.name}:${f.size}:${f.lastModified}`),
+              );
+              return [...current, ...added];
+            });
+            setState('idle');
+            setMessage('');
+            setSpeechText('');
+          }}
+          onSetFiles={(next) => {
+            setFiles(next);
+            setState('idle');
+            setMessage('');
+            setSpeechText('');
+          }}
+          orderable={selected.id === 'merge' || selected.id === 'compare'}
+          hideRunButton={selected.id === 'read-aloud'}
+          onClose={() => setSelected(null)}
+          onRun={handleRun}
+          onCancel={() => abortRef.current?.abort()}
+          state={state}
+          message={message}
+          progress={progress}
+        >
+          {inputLabels[selected.id] && selected.id !== 'sign' && (
+            <div>
+              <label htmlFor="tool-input" className="block text-sm font-semibold text-strong">
+                {inputLabels[selected.id]}
+              </label>
+              {FILELESS.has(selected.id) ? (
+                <textarea
+                  id="tool-input"
+                  value={toolText}
+                  onChange={(event) => setToolText(event.target.value)}
+                  rows={7}
+                  placeholder={selected.id === 'html-pdf' ? '<h1>หัวข้อ</h1><p>เนื้อหา</p>' : 'พิมพ์หรือวางข้อความที่นี่'}
+                  className="mt-2 w-full rounded-xl border border-line bg-card px-3 py-3 text-body outline-none focus:border-[color:var(--brand-ring)]"
+                />
+              ) : (
+                <input
+                  id="tool-input"
+                  type={['protect', 'unlock'].includes(selected.id) ? 'password' : 'text'}
+                  autoComplete={['protect', 'unlock'].includes(selected.id) ? 'new-password' : 'off'}
+                  value={toolText}
+                  onChange={(event) => setToolText(event.target.value)}
+                  placeholder={
+                    ['organize', 'remove-pages', 'extract-pages'].includes(selected.id) ? 'เช่น 1, 3-5, 2' : 'พิมพ์ที่นี่'
+                  }
+                  className="mt-2 h-11 w-full rounded-xl border border-line bg-card px-3 text-body outline-none focus:border-[color:var(--brand-ring)]"
+                />
+              )}
+            </div>
+          )}
+
+          {selected.id === 'sign' && (
+            <SignaturePad typed={toolText} onTypedChange={setToolText} onDrawnChange={setSignature} />
+          )}
+
+          {selected.id === 'read-aloud' && files.length > 0 && (
+            speechText ? (
+              <ReadAloud text={speechText} />
+            ) : (
+              <button
+                type="button"
+                onClick={loadSpeechText}
+                disabled={state === 'processing'}
+                className="btn-primary w-full"
+              >
+                เตรียมข้อความสำหรับอ่านออกเสียง
+              </button>
+            )
+          )}
+
+          <ToolOptions toolId={selected.id} files={files} options={toolOptions} onChange={setToolOptions} />
+
+          {selected.id === 'ocr' && (
+            <p className="text-xs leading-6 text-muted">
+              ครั้งแรกจะดาวน์โหลดโมเดลภาษาไทยประมาณ 15 MB จากนั้นทำงานในเครื่องทั้งหมด — ภาพเอกสารไม่ถูกส่งออกไป
+            </p>
+          )}
+          {selected.id === 'redact' && (
+            <p className="text-xs leading-6 text-[color:var(--danger)]">
+              ผลลัพธ์จะถูกแปลงเป็นภาพเพื่อลบข้อความต้นฉบับออกจริง ถ้าหาคำที่ระบุไม่พบ ระบบจะไม่สร้างไฟล์ให้
+              โปรดเปิดไฟล์ตรวจก่อนส่งต่อทุกครั้ง
+            </p>
+          )}
+        </ToolDialog>
+      )}
+    </>
+  );
 }

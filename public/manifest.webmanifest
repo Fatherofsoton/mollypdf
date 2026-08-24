@@ -1,0 +1,39 @@
+{
+  "name": "mollypdf — จัดการ PDF โดยไม่ต้องอัปโหลด",
+  "short_name": "mollypdf",
+  "description": "เครื่องมือ PDF ที่ทำงานในเบราว์เซอร์ เนื้อหาไฟล์ไม่ถูกส่งออกจากเครื่อง",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f6f8fb",
+  "theme_color": "#06253d",
+  "lang": "th",
+  "categories": [
+    "productivity",
+    "utilities"
+  ],
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    }
+  ]
+}
