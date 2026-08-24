@@ -15,9 +15,9 @@
  *   ตามขนาด   — chop into chunks under a size limit, for mail attachments
  */
 
-import { CheckCircle2, Files, LoaderCircle, Plus, Scissors, Trash2, Weight } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
-import { renderThumbnails, type Thumbnail } from '../lib/pdf/thumbnails';
+import { CheckCircle2, Files, Plus, Scissors, Trash2, Weight } from 'lucide-react';
+import { useCallback, useState } from 'react';
+import { PageSelectGrid } from './PageSelectGrid';
 
 export type SplitWorkspaceProps = {
   file: File | undefined;
@@ -57,10 +57,9 @@ export function SplitWorkspace({ file, options, onChange }: SplitWorkspaceProps)
   // The parent remounts this component when the chosen file changes (see the
   // `key` in ToolOptions), so per-file state can simply be initial state —
   // no effect needs to reset it, which is both simpler and one less render.
-  const [thumbs, setThumbs] = useState<Thumbnail[]>([]);
+  // Thumbnail loading lives in PageSelectGrid now; this only needs the count
+  // so it can say how many files the user is about to get.
   const [total, setTotal] = useState(0);
-  const [loading, setLoading] = useState(Boolean(file));
-  const [error, setError] = useState('');
 
   const mode = (options.splitMode as Mode) ?? 'pages';
   const extractAll = (options.extractMode ?? 'all') === 'all';
@@ -73,28 +72,6 @@ export function SplitWorkspace({ file, options, onChange }: SplitWorkspaceProps)
     [onChange, options],
   );
 
-  useEffect(() => {
-    if (!file) return;
-    const controller = new AbortController();
-
-    renderThumbnails(
-      file,
-      { signal: controller.signal, report: () => {} },
-      (thumb, count) => {
-        if (controller.signal.aborted) return;
-        setTotal(count);
-        setThumbs((current) => [...current, thumb]);
-      },
-    )
-      .catch((e: unknown) => {
-        if (!controller.signal.aborted) setError(e instanceof Error ? e.message : 'อ่านไฟล์ไม่สำเร็จ');
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
-      });
-
-    return () => controller.abort();
-  }, [file]);
 
   const ranges = options.ranges ?? '';
   const rangeCount = ranges.split(',').map((r) => r.trim()).filter(Boolean).length;
@@ -132,7 +109,6 @@ export function SplitWorkspace({ file, options, onChange }: SplitWorkspaceProps)
     set({ extractMode: 'selected', selectedPages: '' });
   }
 
-  const isSelected = (page: number) => (extractAll ? true : selected.has(page));
 
   return (
     <div className="space-y-5">
@@ -256,74 +232,15 @@ export function SplitWorkspace({ file, options, onChange }: SplitWorkspaceProps)
       )}
 
       {/* ── page grid ── */}
-      {error && <p className="text-sm text-[color:var(--danger)]">{error}</p>}
+      <PageSelectGrid
+        file={file}
+        selected={selected}
+        selectAll={extractAll}
+        onToggle={toggle}
+        onTotal={setTotal}
+        interactive={mode === 'pages' && !extractAll}
+      />
 
-      {file && (
-        <div>
-          <div className="mb-2 flex items-center justify-between text-xs text-subtle">
-            <span>
-              {total ? `${total.toLocaleString('th-TH')} หน้า` : 'กำลังอ่านเอกสาร…'}
-              {mode === 'pages' && !extractAll && selected.size > 0 && ` · เลือกไว้ ${selected.size}`}
-            </span>
-            {loading && (
-              <span className="flex items-center gap-1.5">
-                <LoaderCircle size={13} className="animate-spin" aria-hidden="true" />
-                {thumbs.length}/{total || '…'}
-              </span>
-            )}
-          </div>
-
-          <div className="max-h-[46vh] overflow-y-auto rounded-[var(--radius-lg)] border border-line bg-sunken p-3">
-            <ul className="grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-5">
-              {thumbs.map((thumb) => {
-                const page = thumb.index + 1;
-                const on = isSelected(page);
-                const interactive = mode === 'pages' && !extractAll;
-                return (
-                  <li key={thumb.index} data-testid="page-thumb">
-                    <button
-                      type="button"
-                      disabled={!interactive}
-                      aria-pressed={interactive ? on : undefined}
-                      aria-label={`หน้า ${page}${interactive ? (on ? ' — เลือกอยู่' : ' — ยังไม่เลือก') : ''}`}
-                      onClick={() => interactive && toggle(page)}
-                      className={`group relative block w-full rounded-[var(--radius-md)] border-2 bg-card p-1.5 transition ${
-                        on ? 'border-brand' : 'border-transparent'
-                      } ${interactive ? 'cursor-pointer hover:border-[color:var(--brand-ring)]' : 'cursor-default'}`}
-                    >
-                      {on && (
-                        <span
-                          aria-hidden="true"
-                          className="absolute -left-1 -top-1 z-10 grid size-5 place-items-center rounded-full bg-[color:var(--ok)] text-white"
-                        >
-                          <CheckCircle2 size={13} />
-                        </span>
-                      )}
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={thumb.dataUrl}
-                        alt=""
-                        loading="lazy"
-                        className={`w-full rounded-sm shadow-[var(--shadow-1)] transition ${on ? '' : 'opacity-55'}`}
-                      />
-                      <span className="mt-1.5 block text-center text-[11px] font-medium text-muted">{page}</span>
-                    </button>
-                  </li>
-                );
-              })}
-
-              {loading &&
-                Array.from({ length: Math.max(0, Math.min(10, (total || 10) - thumbs.length)) }).map((_, i) => (
-                  <li
-                    key={`skeleton-${i}`}
-                    className="aspect-[1/1.35] animate-pulse rounded-[var(--radius-md)] bg-card"
-                    aria-hidden="true"
-                  />
-                ))}
-            </ul>
-          </div>
-        </div>
-      )}
 
       {!file && (
         <p className="flex items-center gap-2 text-sm text-subtle">

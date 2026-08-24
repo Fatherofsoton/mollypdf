@@ -28,6 +28,14 @@ export type SignaturePadProps = {
 const WIDTH = 560;
 const HEIGHT = 200;
 
+/**
+ * A signature is a wide, short shape. Letting the pad grow to the full dialog
+ * width pushed the drag-to-place preview below the fold, which is the one thing
+ * you need to see while signing — so the pad is capped at a size that still
+ * gives a comfortable stroke area (~430 x 154 css px).
+ */
+const MAX_PAD_WIDTH = 430;
+
 export function SignaturePad({ typed, onTypedChange, onDrawnChange }: SignaturePadProps) {
   const [mode, setMode] = useState<'draw' | 'type'>('draw');
   const [hasInk, setHasInk] = useState(false);
@@ -158,8 +166,8 @@ export function SignaturePad({ typed, onTypedChange, onDrawnChange }: SignatureP
         <div>
           <canvas
             ref={canvasRef}
-            style={{ aspectRatio: `${WIDTH} / ${HEIGHT}`, touchAction: 'none' }}
-            className="w-full cursor-crosshair rounded-xl border border-dashed border-[color:var(--line-strong)] bg-card"
+            style={{ aspectRatio: `${WIDTH} / ${HEIGHT}`, touchAction: 'none', maxWidth: MAX_PAD_WIDTH }}
+            className="mx-auto block w-full cursor-crosshair rounded-xl border border-dashed border-[color:var(--line-strong)] bg-card"
             aria-label="พื้นที่วาดลายเซ็น ใช้เมาส์ นิ้ว หรือปากกาวาดได้"
             role="img"
             onPointerDown={(event) => {
@@ -204,8 +212,8 @@ export function SignaturePad({ typed, onTypedChange, onDrawnChange }: SignatureP
             value={typed}
             onChange={(event) => onTypedChange(event.target.value)}
             placeholder="พิมพ์ชื่อ-นามสกุล"
-            className="h-12 w-full rounded-xl border border-line bg-card px-3 text-lg text-body outline-none focus:border-[color:var(--brand-ring)]"
-            style={{ fontStyle: 'italic', fontWeight: 600 }}
+            className="mx-auto block h-12 w-full rounded-xl border border-line bg-card px-3 text-lg text-body outline-none focus:border-[color:var(--brand-ring)]"
+            style={{ fontStyle: 'italic', fontWeight: 600, maxWidth: MAX_PAD_WIDTH }}
           />
           <p className="mt-2 text-xs text-subtle">
             ลายเซ็นแบบพิมพ์เหมาะกับเอกสารภายใน ถ้าต้องใช้ยืนยันตัวตนจริง แนะนำให้วาดเอง

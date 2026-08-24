@@ -169,7 +169,14 @@ export function ToolDialog({
           {!fileless && (
             <>
               {/* A real <button>: focusable, Enter/Space activate it, and it is
-                  announced with its purpose. */}
+                  announced with its purpose.
+
+                  Once a file is chosen it collapses to a single row. The tall
+                  version used to stay put, pushing the page preview — which is
+                  the actual working area for signing, stamping and exporting —
+                  below the fold, so people reported the preview as "missing"
+                  when it was simply off screen. Dropping a file still works on
+                  either form. */}
               <button
                 type="button"
                 onClick={() => inputRef.current?.click()}
@@ -180,19 +187,36 @@ export function ToolDialog({
                   setDragging(false);
                   onFiles([...event.dataTransfer.files]);
                 }}
-                className={`w-full rounded-[22px] border-2 border-dashed px-5 py-8 text-center transition ${
-                  dragging ? 'border-brand bg-brand-soft' : 'border-[color:var(--line-strong)] bg-sunken'
-                }`}
+                className={
+                  files.length
+                    ? `flex w-full items-center justify-center gap-2 rounded-[var(--radius-md)] border border-dashed px-4 py-2.5 text-sm font-medium transition ${
+                        dragging
+                          ? 'border-brand bg-brand-soft text-brand'
+                          : 'border-[color:var(--line-strong)] text-muted hover:bg-sunken'
+                      }`
+                    : `w-full rounded-[22px] border-2 border-dashed px-5 py-8 text-center transition ${
+                        dragging ? 'border-brand bg-brand-soft' : 'border-[color:var(--line-strong)] bg-sunken'
+                      }`
+                }
               >
-                <Upload className="mx-auto text-brand" size={28} aria-hidden="true" />
-                <strong className="mt-3 block text-strong">
-                  {files.length
-                    ? 'เพิ่มหรือเปลี่ยนไฟล์'
-                    : tool.id === 'compare'
-                      ? 'เลือก PDF 2 ไฟล์'
-                      : `เลือกไฟล์จากเครื่อง${tool.multiple ? ' (เลือกได้หลายไฟล์)' : ''}`}
-                </strong>
-                <span className="mt-1 block text-xs text-subtle">ลากมาวางตรงนี้ก็ได้ · ไฟล์จะไม่ถูกอัปโหลด</span>
+                {files.length ? (
+                  <>
+                    <Upload size={15} aria-hidden="true" />
+                    {tool.multiple ? 'เพิ่มไฟล์' : 'เปลี่ยนไฟล์'}
+                  </>
+                ) : (
+                  <>
+                    <Upload className="mx-auto text-brand" size={28} aria-hidden="true" />
+                    <strong className="mt-3 block text-strong">
+                      {tool.id === 'compare'
+                        ? 'เลือก PDF 2 ไฟล์'
+                        : `เลือกไฟล์จากเครื่อง${tool.multiple ? ' (เลือกได้หลายไฟล์)' : ''}`}
+                    </strong>
+                    <span className="mt-1 block text-xs text-subtle">
+                      ลากมาวางตรงนี้ก็ได้ · ไฟล์จะไม่ถูกอัปโหลด
+                    </span>
+                  </>
+                )}
               </button>
               <input
                 ref={inputRef}
@@ -213,7 +237,7 @@ export function ToolDialog({
 
           {/* Every status change is announced. `role="status"` is polite, so it
               does not interrupt what the user is already doing. */}
-          <div role="status" aria-live="polite" className="min-h-0">
+          <div role="status" aria-live="polite" data-testid="run-status" className="min-h-0">
             {state !== 'idle' && (
               <div
                 className={`flex items-start gap-2 rounded-xl px-4 py-3 text-sm ${

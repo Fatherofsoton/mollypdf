@@ -158,8 +158,19 @@ export function PlacementWorkspace({
         {page && (
           <div
             ref={stageRef}
-            className="relative mx-auto w-full max-w-[420px] touch-none select-none overflow-hidden rounded-[var(--radius-sm)] bg-white shadow-[var(--shadow-2)]"
-            style={{ aspectRatio: `${page.width} / ${page.height}` }}
+            className="relative mx-auto touch-none select-none overflow-hidden rounded-[var(--radius-sm)] bg-white shadow-[var(--shadow-2)]"
+            /**
+             * Sized from the height, not the width: the sign tool stacks a
+             * signature pad above this, and a full-width A4 preview pushed the
+             * placement marker off screen. Fixing the height and letting
+             * `aspect-ratio` derive the width keeps the whole page visible in
+             * the dialog at any viewport.
+             */
+            style={{
+              aspectRatio: `${page.width} / ${page.height}`,
+              height: 'min(52vh, 520px)',
+              width: 'auto',
+            }}
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={page.dataUrl} alt={`ตัวอย่างหน้า ${pageIndex + 1}`} className="absolute inset-0 h-full w-full" />
