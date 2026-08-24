@@ -1,0 +1,663 @@
+{
+  "$schema": "https://design-tokens.github.io/community-group/format/",
+  "$description": "mollypdf colour tokens, DTCG format. Three tiers: primitives are fixed, semantic tokens carry the intent and are the only tier components may name, and dark mode re-points the semantic tier while the primitives stay put. app/tokens.css is generated from this file by scripts/build-tokens.mjs — edit the JSON, never the CSS.",
+  "primitive": {
+    "$description": "Raw palette. Fixed across themes and never referenced from a component — dark mode swaps at the semantic tier, not here.",
+    "azure": {
+      "$description": "The brand hue.",
+      "50": {
+        "$type": "color",
+        "$value": "#eef5fa"
+      },
+      "100": {
+        "$type": "color",
+        "$value": "#e8f2f9"
+      },
+      "200": {
+        "$type": "color",
+        "$value": "#a8d8f0"
+      },
+      "300": {
+        "$type": "color",
+        "$value": "#a5d3ec"
+      },
+      "400": {
+        "$type": "color",
+        "$value": "#8fcbe9"
+      },
+      "500": {
+        "$type": "color",
+        "$value": "#7ab8de"
+      },
+      "550": {
+        "$type": "color",
+        "$value": "#6fb6dd"
+      },
+      "600": {
+        "$type": "color",
+        "$value": "#7fb3d2"
+      },
+      "700": {
+        "$type": "color",
+        "$value": "#3f7fa3"
+      },
+      "750": {
+        "$type": "color",
+        "$value": "#2774a3"
+      },
+      "800": {
+        "$type": "color",
+        "$value": "#0a5f8c"
+      },
+      "850": {
+        "$type": "color",
+        "$value": "#17405c"
+      },
+      "900": {
+        "$type": "color",
+        "$value": "#0d3c5f"
+      },
+      "950": {
+        "$type": "color",
+        "$value": "#12303f"
+      },
+      "980": {
+        "$type": "color",
+        "$value": "#0d2c3f"
+      }
+    },
+    "ink": {
+      "$description": "Navy-tinted neutral: text, lines and every dark surface. Steps run light to dark by measured relative luminance.",
+      "25": {
+        "$type": "color",
+        "$value": "#f6f8fb"
+      },
+      "50": {
+        "$type": "color",
+        "$value": "#eef3f8"
+      },
+      "100": {
+        "$type": "color",
+        "$value": "#dbe4ed"
+      },
+      "200": {
+        "$type": "color",
+        "$value": "#c3d2df"
+      },
+      "300": {
+        "$type": "color",
+        "$value": "#a9c2d4"
+      },
+      "400": {
+        "$type": "color",
+        "$value": "#9db1c1"
+      },
+      "450": {
+        "$type": "color",
+        "$value": "#94a9ba"
+      },
+      "500": {
+        "$type": "color",
+        "$value": "#8ba0b1"
+      },
+      "550": {
+        "$type": "color",
+        "$value": "#7d8d9d",
+        "$description": "Light-theme control edge — 3.40:1 on white, clears WCAG 1.4.11."
+      },
+      "600": {
+        "$type": "color",
+        "$value": "#6b7f92"
+      },
+      "650": {
+        "$type": "color",
+        "$value": "#5f7183"
+      },
+      "700": {
+        "$type": "color",
+        "$value": "#5a6e80"
+      },
+      "750": {
+        "$type": "color",
+        "$value": "#33485c"
+      },
+      "800": {
+        "$type": "color",
+        "$value": "#24404f",
+        "$description": "Dark-theme decorative rule — 1.28:1 against the dark card, visible but quiet."
+      },
+      "850": {
+        "$type": "color",
+        "$value": "#1d3e56",
+        "$description": "Dark surface: raised (dialogs, popovers)."
+      },
+      "870": {
+        "$type": "color",
+        "$value": "#162e40",
+        "$description": "Dark surface: card — 1.31:1 above the dark page, so elevation reads without a shadow."
+      },
+      "880": {
+        "$type": "color",
+        "$value": "#072742"
+      },
+      "890": {
+        "$type": "color",
+        "$value": "#06253d"
+      },
+      "900": {
+        "$type": "color",
+        "$value": "#05202f"
+      },
+      "920": {
+        "$type": "color",
+        "$value": "#0a1620",
+        "$description": "Dark surface: page."
+      },
+      "940": {
+        "$type": "color",
+        "$value": "#061722"
+      },
+      "950": {
+        "$type": "color",
+        "$value": "#070f17",
+        "$description": "Dark surface: sunken — below the page, not above it. Deep enough to read as a well, not so deep it looks like a hole punched through the dialog."
+      }
+    },
+    "teal": {
+      "50": {
+        "$type": "color",
+        "$value": "#e6f6f1"
+      },
+      "350": {
+        "$type": "color",
+        "$value": "#64ccb8"
+      },
+      "400": {
+        "$type": "color",
+        "$value": "#59c9ac"
+      },
+      "600": {
+        "$type": "color",
+        "$value": "#168776"
+      },
+      "700": {
+        "$type": "color",
+        "$value": "#0a7a63"
+      },
+      "900": {
+        "$type": "color",
+        "$value": "#103e34"
+      },
+      "950": {
+        "$type": "color",
+        "$value": "#10302a"
+      }
+    },
+    "amber": {
+      "50": {
+        "$type": "color",
+        "$value": "#fdf3e2"
+      },
+      "400": {
+        "$type": "color",
+        "$value": "#e0b269"
+      },
+      "700": {
+        "$type": "color",
+        "$value": "#9a6512"
+      },
+      "900": {
+        "$type": "color",
+        "$value": "#453820"
+      },
+      "950": {
+        "$type": "color",
+        "$value": "#2f2617"
+      }
+    },
+    "clay": {
+      "50": {
+        "$type": "color",
+        "$value": "#fdeeec"
+      },
+      "400": {
+        "$type": "color",
+        "$value": "#e88b83"
+      },
+      "600": {
+        "$type": "color",
+        "$value": "#b54f5d"
+      },
+      "700": {
+        "$type": "color",
+        "$value": "#a63d3d"
+      },
+      "800": {
+        "$type": "color",
+        "$value": "#8a3030"
+      },
+      "900": {
+        "$type": "color",
+        "$value": "#4a2c2a"
+      },
+      "950": {
+        "$type": "color",
+        "$value": "#33201f"
+      }
+    },
+    "iris": {
+      "400": {
+        "$type": "color",
+        "$value": "#a99af0"
+      },
+      "700": {
+        "$type": "color",
+        "$value": "#6857b8"
+      }
+    },
+    "white": {
+      "$type": "color",
+      "$value": "#ffffff"
+    }
+  },
+  "semantic": {
+    "surface": {
+      "page": {
+        "$type": "color",
+        "$value": "{primitive.ink.25}"
+      },
+      "card": {
+        "$type": "color",
+        "$value": "{primitive.white}"
+      },
+      "raised": {
+        "$type": "color",
+        "$value": "{primitive.white}"
+      },
+      "sunken": {
+        "$type": "color",
+        "$value": "{primitive.ink.50}"
+      },
+      "inverse": {
+        "$type": "color",
+        "$value": "{primitive.ink.890}"
+      },
+      "inverse-soft": {
+        "$type": "color",
+        "$value": "{primitive.azure.980}"
+      }
+    },
+    "text": {
+      "strong": {
+        "$type": "color",
+        "$value": "{primitive.ink.880}"
+      },
+      "body": {
+        "$type": "color",
+        "$value": "{primitive.ink.750}"
+      },
+      "muted": {
+        "$type": "color",
+        "$value": "{primitive.ink.700}"
+      },
+      "subtle": {
+        "$type": "color",
+        "$value": "{primitive.ink.650}"
+      },
+      "on-inverse": {
+        "$type": "color",
+        "$value": "{primitive.azure.50}"
+      },
+      "on-inverse-muted": {
+        "$type": "color",
+        "$value": "{primitive.ink.300}"
+      }
+    },
+    "brand": {
+      "base": {
+        "$type": "color",
+        "$value": "{primitive.azure.800}"
+      },
+      "strong": {
+        "$type": "color",
+        "$value": "{primitive.azure.900}"
+      },
+      "soft": {
+        "$type": "color",
+        "$value": "{primitive.azure.100}"
+      }
+    },
+    "action": {
+      "bg": {
+        "$type": "color",
+        "$value": "{primitive.azure.800}"
+      },
+      "bg-hover": {
+        "$type": "color",
+        "$value": "{primitive.azure.900}"
+      },
+      "bg-active": {
+        "$type": "color",
+        "$value": "{primitive.ink.890}"
+      },
+      "fg": {
+        "$type": "color",
+        "$value": "{primitive.white}"
+      },
+      "destructive": {
+        "$type": "color",
+        "$value": "{primitive.clay.700}",
+        "$description": "Intent, not hue: a destructive control must never borrow action.bg."
+      },
+      "destructive-hover": {
+        "$type": "color",
+        "$value": "{primitive.clay.800}"
+      },
+      "destructive-fg": {
+        "$type": "color",
+        "$value": "{primitive.white}"
+      }
+    },
+    "feedback": {
+      "success-bg": {
+        "$type": "color",
+        "$value": "{primitive.teal.50}"
+      },
+      "success-text": {
+        "$type": "color",
+        "$value": "{primitive.teal.700}"
+      },
+      "success-border": {
+        "$type": "color",
+        "$value": "{primitive.teal.600}"
+      },
+      "success-icon": {
+        "$type": "color",
+        "$value": "{primitive.teal.700}"
+      },
+      "warning-bg": {
+        "$type": "color",
+        "$value": "{primitive.amber.50}"
+      },
+      "warning-text": {
+        "$type": "color",
+        "$value": "{primitive.amber.700}"
+      },
+      "warning-border": {
+        "$type": "color",
+        "$value": "{primitive.amber.400}"
+      },
+      "warning-icon": {
+        "$type": "color",
+        "$value": "{primitive.amber.700}"
+      },
+      "error-bg": {
+        "$type": "color",
+        "$value": "{primitive.clay.50}"
+      },
+      "error-text": {
+        "$type": "color",
+        "$value": "{primitive.clay.700}"
+      },
+      "error-border": {
+        "$type": "color",
+        "$value": "{primitive.clay.600}"
+      },
+      "error-icon": {
+        "$type": "color",
+        "$value": "{primitive.clay.700}"
+      }
+    },
+    "interactive": {
+      "selected-bg": {
+        "$type": "color",
+        "$value": "{primitive.azure.100}"
+      },
+      "selected-border": {
+        "$type": "color",
+        "$value": "{primitive.azure.800}"
+      },
+      "focus-ring": {
+        "$type": "color",
+        "$value": "{primitive.azure.700}",
+        "$description": "4.13:1 on the page ground — WCAG 1.4.11 wants 3:1 of a focus indicator."
+      }
+    },
+    "line": {
+      "base": {
+        "$type": "color",
+        "$value": "{primitive.ink.100}"
+      },
+      "strong": {
+        "$type": "color",
+        "$value": "{primitive.ink.550}"
+      }
+    },
+    "category": {
+      "violet": {
+        "$type": "color",
+        "$value": "{primitive.iris.700}"
+      },
+      "blue": {
+        "$type": "color",
+        "$value": "{primitive.azure.750}"
+      },
+      "green": {
+        "$type": "color",
+        "$value": "{primitive.teal.700}"
+      },
+      "amber": {
+        "$type": "color",
+        "$value": "{primitive.amber.700}"
+      },
+      "rose": {
+        "$type": "color",
+        "$value": "{primitive.clay.600}"
+      },
+      "mint": {
+        "$type": "color",
+        "$value": "{primitive.teal.600}"
+      }
+    }
+  },
+  "dark": {
+    "$description": "Semantic overrides for the dark theme. Same shape as `semantic`; anything absent falls through to the light value.",
+    "surface": {
+      "page": {
+        "$type": "color",
+        "$value": "{primitive.ink.920}"
+      },
+      "card": {
+        "$type": "color",
+        "$value": "{primitive.ink.870}"
+      },
+      "raised": {
+        "$type": "color",
+        "$value": "{primitive.ink.850}"
+      },
+      "sunken": {
+        "$type": "color",
+        "$value": "{primitive.ink.950}"
+      },
+      "inverse": {
+        "$type": "color",
+        "$value": "{primitive.ink.940}"
+      },
+      "inverse-soft": {
+        "$type": "color",
+        "$value": "{primitive.azure.980}"
+      }
+    },
+    "text": {
+      "strong": {
+        "$type": "color",
+        "$value": "{primitive.ink.50}"
+      },
+      "body": {
+        "$type": "color",
+        "$value": "{primitive.ink.200}"
+      },
+      "muted": {
+        "$type": "color",
+        "$value": "{primitive.ink.400}"
+      },
+      "subtle": {
+        "$type": "color",
+        "$value": "{primitive.ink.450}"
+      },
+      "on-inverse": {
+        "$type": "color",
+        "$value": "{primitive.ink.50}"
+      },
+      "on-inverse-muted": {
+        "$type": "color",
+        "$value": "{primitive.ink.400}"
+      }
+    },
+    "brand": {
+      "base": {
+        "$type": "color",
+        "$value": "{primitive.azure.550}"
+      },
+      "strong": {
+        "$type": "color",
+        "$value": "{primitive.azure.300}"
+      },
+      "soft": {
+        "$type": "color",
+        "$value": "{primitive.azure.850}"
+      }
+    },
+    "action": {
+      "bg": {
+        "$type": "color",
+        "$value": "{primitive.azure.400}"
+      },
+      "bg-hover": {
+        "$type": "color",
+        "$value": "{primitive.azure.200}"
+      },
+      "bg-active": {
+        "$type": "color",
+        "$value": "{primitive.azure.300}"
+      },
+      "fg": {
+        "$type": "color",
+        "$value": "{primitive.ink.900}"
+      },
+      "destructive": {
+        "$type": "color",
+        "$value": "{primitive.clay.400}"
+      },
+      "destructive-hover": {
+        "$type": "color",
+        "$value": "{primitive.clay.50}"
+      },
+      "destructive-fg": {
+        "$type": "color",
+        "$value": "{primitive.ink.900}"
+      }
+    },
+    "feedback": {
+      "success-bg": {
+        "$type": "color",
+        "$value": "{primitive.teal.900}"
+      },
+      "success-text": {
+        "$type": "color",
+        "$value": "{primitive.teal.400}"
+      },
+      "success-border": {
+        "$type": "color",
+        "$value": "{primitive.teal.600}"
+      },
+      "success-icon": {
+        "$type": "color",
+        "$value": "{primitive.teal.400}"
+      },
+      "warning-bg": {
+        "$type": "color",
+        "$value": "{primitive.amber.900}"
+      },
+      "warning-text": {
+        "$type": "color",
+        "$value": "{primitive.amber.400}"
+      },
+      "warning-border": {
+        "$type": "color",
+        "$value": "{primitive.amber.700}"
+      },
+      "warning-icon": {
+        "$type": "color",
+        "$value": "{primitive.amber.400}"
+      },
+      "error-bg": {
+        "$type": "color",
+        "$value": "{primitive.clay.900}"
+      },
+      "error-text": {
+        "$type": "color",
+        "$value": "{primitive.clay.400}"
+      },
+      "error-border": {
+        "$type": "color",
+        "$value": "{primitive.clay.600}"
+      },
+      "error-icon": {
+        "$type": "color",
+        "$value": "{primitive.clay.400}"
+      }
+    },
+    "interactive": {
+      "selected-bg": {
+        "$type": "color",
+        "$value": "{primitive.azure.850}"
+      },
+      "selected-border": {
+        "$type": "color",
+        "$value": "{primitive.azure.550}"
+      },
+      "focus-ring": {
+        "$type": "color",
+        "$value": "{primitive.azure.550}"
+      }
+    },
+    "line": {
+      "base": {
+        "$type": "color",
+        "$value": "{primitive.ink.800}"
+      },
+      "strong": {
+        "$type": "color",
+        "$value": "{primitive.ink.600}"
+      }
+    },
+    "category": {
+      "violet": {
+        "$type": "color",
+        "$value": "{primitive.iris.400}"
+      },
+      "blue": {
+        "$type": "color",
+        "$value": "{primitive.azure.500}"
+      },
+      "green": {
+        "$type": "color",
+        "$value": "{primitive.teal.400}"
+      },
+      "amber": {
+        "$type": "color",
+        "$value": "{primitive.amber.400}"
+      },
+      "rose": {
+        "$type": "color",
+        "$value": "{primitive.clay.400}"
+      },
+      "mint": {
+        "$type": "color",
+        "$value": "{primitive.teal.350}",
+        "$description": "Distinct from category.green — two categories sharing one colour is not a category system."
+      }
+    }
+  }
+}
