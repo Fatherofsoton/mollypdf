@@ -43,9 +43,32 @@ async function imageHeaviness(file: File): Promise<number> {
   }
 }
 
-export type CompressResult = { blob: Blob; before: number; after: number; method: 'lossless' | 'raster' | 'unchanged' };
+export type CompressLevel = 'extreme' | 'recommended' | 'less';
 
-export async function compressPdf(file: File, ctx: RunContext): Promise<CompressResult> {
+export type CompressResult = {
+  blob: Blob;
+  before: number;
+  after: number;
+  method: 'lossless' | 'raster' | 'unchanged';
+  level: CompressLevel;
+};
+
+/**
+ * Rasterising settings per level. The numbers matter: 150 dpi (scale ~2 on a
+ * 72 dpi page) is the floor for something that will be printed, which is why
+ * "less" sits there and only "extreme" goes below screen resolution.
+ */
+const LEVELS: Record<CompressLevel, { scale: number; quality: number }> = {
+  extreme: { scale: 1.0, quality: 0.45 },
+  recommended: { scale: 1.35, quality: 0.62 },
+  less: { scale: 2.0, quality: 0.82 },
+};
+
+export async function compressPdf(
+  file: File,
+  ctx: RunContext,
+  level: CompressLevel = 'recommended',
+): Promise<CompressResult> {
   const before = file.size;
   const { PDFDocument } = await import('pdf-lib');
 
@@ -55,19 +78,28 @@ export async function compressPdf(file: File, ctx: RunContext): Promise<Compress
   await step(ctx, 1, 3, 'กำลังจัดโครงสร้างไฟล์ใหม่');
 
   const heaviness = await imageHeaviness(file);
-  if (heaviness < 0.5) {
-    // Mostly text/vector: rasterising would look worse *and* weigh more.
-    return lossless.size < before
-      ? { blob: lossless, before, after: lossless.size, method: 'lossless' }
-      : { blob: lossless, before, after: lossless.size, method: 'unchanged' };
+  const shouldRaster = heaviness >= 0.5 || level === 'extreme';
+
+  if (!shouldRaster) {
+    // Mostly text/vector: rasterising would look worse *and* usually weigh more.
+    return {
+      blob: lossless,
+      before,
+      after: lossless.size,
+      method: lossless.size < before ? 'lossless' : 'unchanged',
+      level,
+    };
   }
 
-  // Path B — image-heavy (a scan): re-encoding really does help.
+  // Path B — re-encode the page images.
   await step(ctx, 2, 3, 'กำลังบีบอัดภาพในเอกสาร');
-  const { PDFDocument: Out } = await import('pdf-lib');
-  const out = await Out.create();
-  for await (const rendered of renderPages(file, ctx, { scale: 1.35, label: 'กำลังบีบอัดหน้า' })) {
-    const blob = await canvasToBlob(rendered.canvas, 'image/jpeg', 0.62);
+  const settings = LEVELS[level];
+  const out = await PDFDocument.create();
+  for await (const rendered of renderPages(file, ctx, {
+    scale: settings.scale,
+    label: 'กำลังบีบอัดหน้า',
+  })) {
+    const blob = await canvasToBlob(rendered.canvas, 'image/jpeg', settings.quality);
     const image = await out.embedJpg(await blob.arrayBuffer());
     const page = out.addPage([image.width, image.height]);
     page.drawImage(image, { x: 0, y: 0, width: image.width, height: image.height });
@@ -83,9 +115,9 @@ export async function compressPdf(file: File, ctx: RunContext): Promise<Compress
   ].sort((a, b) => a.blob.size - b.blob.size)[0];
 
   if (best.blob.size >= before) {
-    return { blob: lossless, before, after: lossless.size, method: 'unchanged' };
+    return { blob: lossless, before, after: lossless.size, method: 'unchanged', level };
   }
-  return { blob: best.blob, before, after: best.blob.size, method: best.method };
+  return { blob: best.blob, before, after: best.blob.size, method: best.method, level };
 }
 
 /** Greyscale still has to rasterise — but at print resolution, not 0.45. */

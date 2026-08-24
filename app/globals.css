@@ -284,6 +284,90 @@ button:disabled { cursor: not-allowed; }
 
 .lede { font-size: clamp(1rem, 1.4vw, 1.1875rem); line-height: 1.8; color: var(--text-muted); }
 
+/* ==========================================================================
+   Inverted sections
+   --------------------------------------------------------------------------
+   BUG FIX: the dark privacy band set `text-[color:var(--text-on-inverse)]` on
+   its heading, but `.section-title` also declares `color`. Both selectors have
+   the same specificity (0,1,0), so the one that appears later in the stylesheet
+   wins — and that was `.section-title`, which paints `--text-strong`. In light
+   mode `--text-strong` is near-black navy sitting on a near-black navy band, so
+   the headline was invisible. (In dark mode the token happened to be light, so
+   the bug only showed in one theme — which is why it survived review.)
+
+   Fixing it with a utility on every child would leave the same trap for the
+   next person. Instead this scope re-points the *tokens* for everything inside
+   an inverted band, so components keep using the tokens they already use.
+   ========================================================================== */
+
+.on-inverse {
+  --text-strong: var(--text-on-inverse);
+  --text-body: var(--text-on-inverse-muted);
+  --text-muted: var(--text-on-inverse-muted);
+  --text-subtle: var(--text-on-inverse-muted);
+  --line: rgb(255 255 255 / 0.14);
+  --line-strong: rgb(255 255 255 / 0.24);
+
+  /* The semantic accents are tuned for a white ground: --ok is #0A7A63, which
+     is 5.3:1 on white but only 2.97:1 on this band — it was failing on the
+     eyebrow and the "see every network request" link. Inside an inverted band
+     they take their light-on-dark values, the same ones the dark theme uses. */
+  --ok: #59c9ac;
+  --warn: #e0b269;
+  --danger: #e88b83;
+  --brand: #8ec8e8;
+
+  color: var(--text-on-inverse);
+}
+
+/* Cards *inside* an inverted band go back to the normal palette, so the little
+   white panel in the privacy section stays readable. */
+.on-inverse .on-inverse-reset {
+  --text-strong: #072742;
+  --text-body: #33485c;
+  --text-muted: #5a6e80;
+  --text-subtle: #5f7183;
+  --line: #dbe4ed;
+  /* The accents have to come back too. Inheriting the band's light-on-dark
+     green put #59C9AC on the card's white ground at 2.02:1. */
+  --ok: #0a7a63;
+  --warn: #9a6512;
+  --danger: #a63d3d;
+  --brand: #0a5f8c;
+  color: var(--text-body);
+}
+/* The dark variant needs BOTH guards, and the `:not([data-theme='light'])` one
+   must sit inside the media query. Without the media query it matches any
+   document that has no explicit theme attribute — which is the default — so it
+   applied in light mode too and painted near-white text on the white card
+   (measured at 1.13:1). Same shape as the three-state rule at the top of this
+   file; the exception is not allowed to skip it. */
+:root[data-theme='dark'] .on-inverse .on-inverse-reset {
+  --text-strong: #eaf2f8;
+  --text-body: #c2d3e0;
+  --text-muted: #9db1c1;
+  --text-subtle: #8ba0b1;
+  --line: #1e3444;
+  --ok: #59c9ac;
+  --warn: #e0b269;
+  --danger: #e88b83;
+  --brand: #6fb6dd;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .on-inverse .on-inverse-reset {
+    --text-strong: #eaf2f8;
+    --text-body: #c2d3e0;
+    --text-muted: #9db1c1;
+    --text-subtle: #8ba0b1;
+    --line: #1e3444;
+    --ok: #59c9ac;
+    --warn: #e0b269;
+    --danger: #e88b83;
+    --brand: #6fb6dd;
+  }
+}
+
 .headline-accent { position: relative; display: inline-block; color: var(--brand); }
 /* No underline or highlight block behind this line: a Thai clause carries
    marks above (วรรณยุกต์) and below (สระอุ) the base glyph, so a rule either

@@ -13,13 +13,46 @@
  */
 
 import { useEffect, useState } from 'react';
+import { Feather, Gauge, Minimize2 } from 'lucide-react';
+import { SplitWorkspace } from './SplitWorkspace';
+import { MergeWorkspace } from './MergeWorkspace';
 
 export type OptionsProps = {
   toolId: string;
   files: File[];
   options: Record<string, string>;
   onChange: (next: Record<string, string>) => void;
+  /** Merge needs to reorder and remove files, not just read them. */
+  onFilesChange?: (files: File[]) => void;
+  /** Opens the file picker again so more files can be appended. */
+  onAddFiles?: () => void;
 };
+
+/**
+ * Compression presets, described by what the user gets rather than by the
+ * codec settings behind them. "Recommended" is pre-selected because it is the
+ * only one that is safe for a document that might later be printed.
+ */
+const COMPRESSION = [
+  {
+    id: 'extreme',
+    label: 'บีบอัดสูงสุด',
+    hint: 'ไฟล์เล็กที่สุด คุณภาพลดลงชัดเจน — เหมาะกับการอ่านบนจอเท่านั้น',
+    icon: Minimize2,
+  },
+  {
+    id: 'recommended',
+    label: 'แนะนำ',
+    hint: 'คุณภาพดี ขนาดลดลงมาก — เหมาะกับงานทั่วไปและยังพิมพ์ได้',
+    icon: Gauge,
+  },
+  {
+    id: 'less',
+    label: 'บีบอัดน้อย',
+    hint: 'คุณภาพสูงสุด ขนาดลดลงเล็กน้อย — เหมาะกับเอกสารที่ต้องพิมพ์',
+    icon: Feather,
+  },
+] as const;
 
 const fieldClass =
   'mt-2 h-11 w-full rounded-xl border border-line bg-card px-3 text-body outline-none focus:border-[color:var(--brand-ring)]';
@@ -91,10 +124,76 @@ function FormFields({ files, options, onChange }: Omit<OptionsProps, 'toolId'>) 
   );
 }
 
-export function ToolOptions({ toolId, files, options, onChange }: OptionsProps) {
+export function ToolOptions({
+  toolId,
+  files,
+  options,
+  onChange,
+  onFilesChange,
+  onAddFiles,
+}: OptionsProps) {
   const set = (key: string, value: string) => onChange({ ...options, [key]: value });
 
   switch (toolId) {
+    case 'split':
+      return (
+        <SplitWorkspace
+          // Remounting on a new file resets the thumbnail grid without an
+          // effect that has to undo the previous document's state.
+          key={files[0] ? `${files[0].name}-${files[0].size}-${files[0].lastModified}` : 'empty'}
+          file={files[0]}
+          options={options}
+          onChange={onChange}
+        />
+      );
+
+    case 'merge':
+      return onFilesChange && onAddFiles ? (
+        <MergeWorkspace files={files} onFilesChange={onFilesChange} onAdd={onAddFiles} />
+      ) : null;
+
+    case 'compress': {
+      const current = options.compressLevel ?? 'recommended';
+      return (
+        <fieldset>
+          <legend className="mb-2 text-sm font-semibold text-strong">ระดับการบีบอัด</legend>
+          <div className="space-y-2">
+            {COMPRESSION.map((item) => {
+              const active = current === item.id;
+              return (
+                <label
+                  key={item.id}
+                  className={`flex cursor-pointer items-start gap-3 rounded-[var(--radius-md)] border p-3.5 transition ${
+                    active
+                      ? 'border-brand bg-brand-soft'
+                      : 'border-line bg-card hover:border-[color:var(--line-strong)]'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="compressLevel"
+                    value={item.id}
+                    checked={active}
+                    onChange={() => set('compressLevel', item.id)}
+                    className="mt-1 size-4 shrink-0 accent-[color:var(--brand)]"
+                  />
+                  <item.icon
+                    size={18}
+                    aria-hidden="true"
+                    className={`mt-0.5 shrink-0 ${active ? 'text-brand' : 'text-subtle'}`}
+                  />
+                  <span>
+                    <span className="block text-sm font-semibold text-strong">{item.label}</span>
+                    <span className="mt-0.5 block text-xs leading-5 text-muted">{item.hint}</span>
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+        </fieldset>
+      );
+    }
+
     case 'rotate':
       return (
         <div className="space-y-4">

@@ -90,6 +90,42 @@ async function runToolWith(page, toolId, { file, text } = {}) {
   return { download, status };
 }
 
+/**
+ * A server left over from an earlier run keeps that build's manifest in memory
+ * while `next build` replaces the chunk files on disk, so the browser requests
+ * hashes that no longer exist and every page dies with ChunkLoadError. Refuse
+ * to start until the port is genuinely ours.
+ */
+async function ensurePortFree() {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    try {
+      await fetch(BASE, { signal: AbortSignal.timeout(500) });
+    } catch {
+      return;
+    }
+    if (attempt === 0) {
+      console.error(`port ${PORT} is already serving — stopping the stray server`);
+      const { execSync } = await import('node:child_process');
+      try {
+        // Match on the process name only, so this can never hit the shell that
+        // launched the test run.
+        execSync(
+          "ps -eo pid,comm | awk '$2 ~ /^next-server/ {print $1}' | xargs -r kill -9",
+          { stdio: 'ignore', shell: '/bin/bash' },
+        );
+      } catch {
+        /* nothing to stop */
+      }
+    }
+    await sleep(1000);
+  }
+  throw new Error(
+    `port ${PORT} is still in use. Stop the stray "next start -p ${PORT}" process and re-run.`,
+  );
+}
+
+await ensurePortFree();
+
 const server = spawn('npx', ['next', 'start', '-p', String(PORT)], {
   cwd: root,
   stdio: 'ignore',
@@ -318,6 +354,188 @@ try {
 
   await check('no uncaught page errors during the run', async () => {
     assert(consoleErrors.length === 0, consoleErrors.join('\n'));
+  });
+
+
+  /* ── the invisible-text regression ─────────────────────────────────────
+     Two separate bugs lived here, and neither was visible in the markup:
+
+     1. `.section-title` and the utility meant to override it had equal
+        specificity, so the component class won and painted near-black navy on
+        the near-black navy band.
+     2. The fix's own dark-mode block used `:root:not([data-theme='light'])`
+        *outside* a `prefers-color-scheme` media query, so it matched the
+        default (un-stamped) document and painted near-white text on the white
+        card inside the band — measured at 1.13:1.
+
+     Both only showed in one theme, which is why eyeballing missed them.
+     Measuring every piece of text in the band, in both themes, is the check
+     that actually holds. */
+  await check('every piece of text in the privacy band meets AA in both themes', async () => {
+    const failures = [];
+
+    for (const scheme of ['light', 'dark']) {
+      const themed = await context.newPage();
+      await themed.emulateMedia({ colorScheme: scheme });
+      await themed.goto(BASE, { waitUntil: 'domcontentloaded' });
+
+      // An unstyled snapshot reports black-on-transparent and looks like a
+      // failure, so wait until the stylesheet has actually landed.
+      await themed.waitForFunction(() => {
+        const band = document.querySelector('.on-inverse');
+        const bg = band && getComputedStyle(band).backgroundColor;
+        return Boolean(bg) && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent';
+      }, { timeout: 20_000 });
+
+      const samples = await themed.evaluate(() => {
+        const band = document.querySelector('.on-inverse');
+        const nodes = band.querySelectorAll('h2, p, dt, dd, span, a');
+        return Array.from(nodes)
+          .filter((el) => (el.textContent ?? '').trim().length > 2)
+          .filter((el) => !Array.from(el.children).some((c) => (c.textContent ?? '').trim()))
+          .map((el) => {
+            let probe = el;
+            let bg = 'rgba(0, 0, 0, 0)';
+            while (probe && (bg === 'rgba(0, 0, 0, 0)' || bg === 'transparent')) {
+              bg = getComputedStyle(probe).backgroundColor;
+              probe = probe.parentElement;
+            }
+            return {
+              text: (el.textContent ?? '').trim().slice(0, 24),
+              fg: getComputedStyle(el).color,
+              bg,
+              size: parseFloat(getComputedStyle(el).fontSize),
+              weight: Number(getComputedStyle(el).fontWeight) || 400,
+            };
+          });
+      });
+
+      const toRgb = (value) => (value.match(/[\d.]+/g) ?? []).slice(0, 3).map(Number);
+      const lum = ([r, g, b]) => {
+        const f = [r, g, b].map((v) => {
+          const c = v / 255;
+          return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+        });
+        return 0.2126 * f[0] + 0.7152 * f[1] + 0.0722 * f[2];
+      };
+
+      for (const sample of samples) {
+        const a = lum(toRgb(sample.fg));
+        const b = lum(toRgb(sample.bg));
+        const ratio = (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+        // AA allows 3:1 for large text (>=24px, or >=18.66px bold).
+        const large = sample.size >= 24 || (sample.size >= 18.66 && sample.weight >= 700);
+        const required = large ? 3 : 4.5;
+        if (ratio < required) {
+          failures.push(
+            `[${scheme}] "${sample.text}" ${ratio.toFixed(2)}:1 (needs ${required}:1) — ${sample.fg} on ${sample.bg}`,
+          );
+        }
+      }
+      assert(samples.length >= 5, `[${scheme}] only sampled ${samples.length} elements — selector is wrong`);
+      await themed.close();
+    }
+
+    assert(failures.length === 0, `\n      ${failures.join('\n      ')}`);
+  });
+
+  await check('the step section says "ดำเนินการเสร็จในสามขั้นตอน"', async () => {
+    const html = await (await fetch(`${BASE}/`)).text();
+    assert(html.includes('ดำเนินการเสร็จในสามขั้นตอน'), 'new wording not found');
+    assert(!html.includes('สามจังหวะก็เสร็จ'), 'old wording still present');
+  });
+
+  /* ── Split workspace ── */
+  await check('Split shows page thumbnails and states the outcome up front', async () => {
+    await openTool(page, 'split');
+    const dialog = page.locator('[role="dialog"]');
+    await dialog.locator('input[type="file"]').setInputFiles(join(fixtures, 'thai-4page-with-blanks.pdf'));
+
+    // Thumbnails stream in one page at a time, so wait for the last one.
+    await dialog.locator('[data-testid="page-thumb"]').nth(3).waitFor({ timeout: 45_000 });
+    const thumbs = await dialog.locator('[data-testid="page-thumb"]').count();
+    assert(thumbs === 4, `expected 4 page thumbnails, saw ${thumbs}`);
+
+    const status = await dialog.locator('[data-testid="split-outcome"]').innerText();
+    assert(/จะได้ 4 ไฟล์/.test(status), `outcome sentence was: ${status}`);
+    await page.keyboard.press('Escape');
+  });
+
+  await check('Split range mode reports one file per range', async () => {
+    await openTool(page, 'split');
+    const dialog = page.locator('[role="dialog"]');
+    await dialog.locator('input[type="file"]').setInputFiles(join(fixtures, 'thai-4page-with-blanks.pdf'));
+    await dialog.locator('[data-testid="page-thumb"]').first().waitFor({ timeout: 45_000 });
+    await dialog.getByRole('tab', { name: 'ช่วงหน้า' }).click();
+    await dialog.locator('#split-ranges').fill('1-2, 3-4');
+
+    const outcome = dialog.locator('[data-testid="split-outcome"]');
+    await outcome.waitFor({ timeout: 15_000 });
+    const status = await outcome.innerText();
+    assert(/จะได้ 2 ไฟล์/.test(status), `outcome sentence was: ${status}`);
+    await page.keyboard.press('Escape');
+  });
+
+  await check('Split by range really produces one PDF per range', async () => {
+    await openTool(page, 'split');
+    const dialog = page.locator('[role="dialog"]');
+    await dialog.locator('input[type="file"]').setInputFiles(join(fixtures, 'thai-4page-with-blanks.pdf'));
+    await dialog.getByRole('tab', { name: 'ช่วงหน้า' }).click();
+    await dialog.locator('#split-ranges').fill('1-2, 3-4');
+
+    const downloadPromise = page.waitForEvent('download', { timeout: 60_000 }).catch(() => null);
+    await dialog.getByRole('button', { name: /^เริ่ม/ }).click();
+    const download = await downloadPromise;
+    assert(download, 'no archive produced');
+
+    const JSZip = (await import('jszip')).default;
+    const zip = await JSZip.loadAsync(await readFile(await download.path()));
+    const names = Object.keys(zip.files).filter((n) => n.endsWith('.pdf'));
+    assert(names.length === 2, `expected 2 PDFs in the archive, got ${names.length}: ${names}`);
+  });
+
+  /* ── Compress levels ── */
+  await check('Compress offers three named quality levels', async () => {
+    await openTool(page, 'compress');
+    const dialog = page.locator('[role="dialog"]');
+    for (const label of ['บีบอัดสูงสุด', 'แนะนำ', 'บีบอัดน้อย']) {
+      assert(await dialog.getByText(label, { exact: true }).isVisible(), `missing level: ${label}`);
+    }
+    const checked = await dialog.locator('input[name="compressLevel"]:checked').getAttribute('value');
+    assert(checked === 'recommended', `default level should be recommended, was ${checked}`);
+    await page.keyboard.press('Escape');
+  });
+
+  /* ── Merge workspace ── */
+  await check('Merge shows a cover card per file with reorder controls', async () => {
+    await openTool(page, 'merge');
+    const dialog = page.locator('[role="dialog"]');
+    await dialog.locator('input[type="file"]').setInputFiles([
+      join(fixtures, 'thai-1page.pdf'),
+      join(fixtures, 'thai-segmented.pdf'),
+    ]);
+    const cards = dialog.locator('[data-testid="merge-card"]');
+    await cards.first().waitFor({ timeout: 20_000 });
+    const count = await cards.count();
+    const names = await cards.locator('p[title]').allTextContents();
+    assert(count === 2, `expected 2 file cards, saw ${count}: ${names.join(', ')}`);
+    // Picking files twice must append, not duplicate.
+    assert(new Set(names).size === names.length, `duplicate cards: ${names.join(', ')}`);
+    await page.keyboard.press('Escape');
+  });
+
+  /* ── Category navigation ── */
+  await check('the header exposes tool categories with icons', async () => {
+    await page.goto(BASE, { waitUntil: 'domcontentloaded' });
+    await page.setViewportSize({ width: 1280, height: 900 });
+    const trigger = page.getByRole('button', { name: 'แปลงไฟล์' });
+    assert(await trigger.getAttribute('aria-expanded') === 'false', 'menu should start closed');
+    await trigger.click();
+    assert(await trigger.getAttribute('aria-expanded') === 'true', 'menu did not open');
+    assert(await page.getByText('แปลงเป็น PDF', { exact: true }).isVisible(), 'missing to-PDF column');
+    assert(await page.getByText('แปลงจาก PDF', { exact: true }).isVisible(), 'missing from-PDF column');
+    await page.keyboard.press('Escape');
+    assert(await trigger.getAttribute('aria-expanded') === 'false', 'Escape did not close the menu');
   });
 
   await context.close();

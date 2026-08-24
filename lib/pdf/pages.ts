@@ -44,3 +44,43 @@ export function parsePages(raw: string, total: number, preserveOrder = false): n
   // wants a de-duplicated ascending list.
   return preserveOrder ? values : [...new Set(values)].sort((a, b) => a - b);
 }
+
+export type PageRange = { from: number; to: number };
+
+/**
+ * Parse the split tool's range list: "1-10, 11-25, 40" -> three ranges.
+ *
+ * Unlike `parsePages` this keeps the ranges as ranges, because in the split
+ * workspace each one becomes its own output file — flattening them into a page
+ * list would lose exactly the information the user is expressing.
+ */
+export function parseRangeList(raw: string, total: number): PageRange[] {
+  const ranges: PageRange[] = [];
+  const bad: string[] = [];
+
+  for (const part of (raw ?? '').split(',')) {
+    const token = part.trim();
+    if (!token) continue;
+
+    const match = token.match(/^(\d+)\s*(?:-\s*(\d+))?$/);
+    if (!match) {
+      bad.push(token);
+      continue;
+    }
+    const from = Number(match[1]);
+    const to = match[2] ? Number(match[2]) : from;
+    const lo = Math.min(from, to);
+    const hi = Math.max(from, to);
+    if (lo < 1 || lo > total) {
+      bad.push(token);
+      continue;
+    }
+    ranges.push({ from: lo, to: Math.min(hi, total) });
+  }
+
+  if (bad.length) {
+    throw new Error(`ช่วง ${bad.join(', ')} ไม่ถูกต้องหรือเกินจำนวนหน้า (เอกสารมี ${total} หน้า)`);
+  }
+  if (!ranges.length) throw new Error('กรุณาระบุช่วงหน้าอย่างน้อยหนึ่งช่วง เช่น 1-10');
+  return ranges;
+}

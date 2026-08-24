@@ -32,6 +32,7 @@ import { runTool, extractForSpeech, type ToolInput } from '../lib/tools/run';
 import { CancelledError, type Progress } from '../lib/runtime';
 import { ToolDialog, type RunState } from '../components/ToolDialog';
 import { ToolOptions } from '../components/ToolOptions';
+import { ToolNav } from '../components/ToolNav';
 import { SignaturePad, type SignatureValue } from '../components/SignaturePad';
 import { ReadAloud } from '../components/ReadAloud';
 
@@ -113,6 +114,7 @@ export default function Home() {
   const [stats, setStats] = useState<GlobalStats>({ jobs: 0, bytes: 0, pages: 0, popular: [] });
   const [statsReady, setStatsReady] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+  const openPickerRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     fetch('/api/stats')
@@ -257,13 +259,7 @@ export default function Home() {
             <span>molly<span className="text-brand">pdf</span></span>
           </Link>
 
-          <nav aria-label="เมนูหลัก" className="hidden items-center gap-7 text-sm font-medium text-muted md:flex">
-            <a href="#tools" className="hover:text-brand">เครื่องมือ</a>
-            <Link href="/privacy" className="hover:text-brand">ความเป็นส่วนตัว</Link>
-            <a href="#how" className="hover:text-brand">วิธีใช้</a>
-            {/* Was "สถิติบนเครื่องนี้", which contradicted the section it linked to. */}
-            <a href="#stats" className="hover:text-brand">สถิติการใช้งาน</a>
-          </nav>
+          <ToolNav />
 
           <div className="flex items-center gap-2">
             <button
@@ -280,7 +276,7 @@ export default function Home() {
               aria-expanded={mobileMenu}
               aria-controls="mobile-menu"
               onClick={() => setMobileMenu(!mobileMenu)}
-              className="rounded-xl border border-line p-2 text-muted md:hidden"
+              className="rounded-xl border border-line p-2 text-muted lg:hidden"
             >
               {mobileMenu ? <X size={18} aria-hidden="true" /> : <Menu size={18} aria-hidden="true" />}
               <span className="sr-only">{mobileMenu ? 'ปิดเมนู' : 'เปิดเมนู'}</span>
@@ -289,9 +285,17 @@ export default function Home() {
         </div>
 
         {mobileMenu && (
-          <nav id="mobile-menu" aria-label="เมนูบนมือถือ" className="border-t border-line bg-card px-5 py-3 text-sm font-medium md:hidden">
+          <nav id="mobile-menu" aria-label="เมนูบนมือถือ" className="border-t border-line bg-card px-5 py-3 text-sm font-medium lg:hidden">
             {/* The old mobile menu was missing "วิธีใช้" and never closed on tap. */}
-            {[['#tools', 'เครื่องมือ'], ['/privacy', 'ความเป็นส่วนตัว'], ['#how', 'วิธีใช้'], ['#stats', 'สถิติการใช้งาน']].map(
+            {[
+              ['/tools/merge', 'รวม PDF'],
+              ['/tools/split', 'แยก PDF'],
+              ['/tools/compress', 'บีบอัด PDF'],
+              ['#tools', 'เครื่องมือทั้งหมด'],
+              ['/privacy', 'ความเป็นส่วนตัว'],
+              ['#how', 'วิธีใช้'],
+              ['#stats', 'สถิติการใช้งาน'],
+            ].map(
               ([href, label]) => (
                 <a key={href} href={href} onClick={() => setMobileMenu(false)} className="block py-2.5 text-body">
                   {label}
@@ -454,16 +458,16 @@ export default function Home() {
         </section>
 
         {/* ───────────── privacy ───────────── */}
-        <section className="relative overflow-hidden bg-[color:var(--surface-inverse)] py-24 text-[color:var(--text-on-inverse)]">
+        <section className="on-inverse relative overflow-hidden bg-[color:var(--surface-inverse)] py-24">
           <div className="mx-auto grid max-w-[var(--content)] items-center gap-14 px-5 lg:grid-cols-[1fr_.85fr] lg:px-8">
             <div>
               <p className="flex items-center gap-2 text-sm font-semibold text-[color:var(--ok)]">
                 <ShieldCheck size={18} aria-hidden="true" />ความเป็นส่วนตัวที่อธิบายได้
               </p>
-              <h2 className="section-title mt-5 text-[color:var(--text-on-inverse)]">
+              <h2 className="section-title mt-5">
                 เปิดไฟล์เพื่อทำงาน<br />ไม่ใช่ส่งไฟล์ไปฝากไว้
               </h2>
-              <p className="mt-6 max-w-[54ch] leading-8 text-[color:var(--text-on-inverse-muted)]">
+              <p className="lede mt-6 max-w-[54ch]">
                 เบราว์เซอร์อ่านข้อมูลชั่วคราวและสร้างผลลัพธ์บนอุปกรณ์ของคุณเอง
                 ไม่มี API รับไฟล์ ไม่มีคลาวด์เก็บเอกสาร และไม่มีเนื้อหาเอกสารถูกนำไปวิเคราะห์
               </p>
@@ -488,7 +492,7 @@ export default function Home() {
             </div>
 
             <div className="rounded-[28px] border border-white/12 bg-white/6 p-5 backdrop-blur">
-              <div className="rounded-[20px] bg-[color:var(--surface-card)] p-6 text-body">
+              <div className="on-inverse-reset rounded-[20px] bg-[color:var(--surface-card)] p-6">
                 <p className="text-sm font-semibold text-strong">สิ่งที่ออกจากเครื่องคุณ</p>
                 <dl className="mt-4 space-y-3 text-sm">
                   {[
@@ -514,7 +518,7 @@ export default function Home() {
         <section id="how" className="py-20">
           <div className="mx-auto max-w-[var(--content)] px-5 lg:px-8">
             <div className="text-center">
-              <p className="eyebrow">สามจังหวะก็เสร็จ</p>
+              <p className="eyebrow">ดำเนินการเสร็จในสามขั้นตอน</p>
               <h2 className="section-title mt-2">ไม่ต้องเรียนระบบใหม่ ไม่ต้องติดตั้งอะไรเพิ่ม</h2>
             </div>
             <ol className="mt-12 grid gap-5 md:grid-cols-3">
@@ -612,6 +616,14 @@ export default function Home() {
           tool={selected}
           files={files}
           fileless={FILELESS.has(selected.id)}
+          // Split shows a page grid and Merge shows cover cards; both need room.
+          wide={selected.id === 'split' || selected.id === 'merge'}
+          // Merge renders its own visual cards, so the plain list would be a
+          // second, competing set of reorder controls for the same files.
+          hideFileList={selected.id === 'merge'}
+          registerPicker={(open) => {
+            openPickerRef.current = open;
+          }}
           onFiles={(incoming) => {
             // Adding to a merge list should extend it, not throw away what is
             // already there — and the same file must not land twice.
@@ -691,7 +703,14 @@ export default function Home() {
             )
           )}
 
-          <ToolOptions toolId={selected.id} files={files} options={toolOptions} onChange={setToolOptions} />
+          <ToolOptions
+            toolId={selected.id}
+            files={files}
+            options={toolOptions}
+            onChange={setToolOptions}
+            onFilesChange={setFiles}
+            onAddFiles={() => openPickerRef.current?.()}
+          />
 
           {selected.id === 'ocr' && (
             <p className="text-xs leading-6 text-muted">

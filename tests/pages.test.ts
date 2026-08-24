@@ -8,7 +8,7 @@
 
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
-import { parsePages } from '../lib/pdf/pages';
+import { parsePages, parseRangeList } from '../lib/pdf/pages';
 
 test('parses single pages and ranges, zero-indexed', () => {
   assert.deepEqual(parsePages('1', 5), [0]);
@@ -41,4 +41,35 @@ test('rejects empty input with an actionable message', () => {
 test('clamps a range that starts inside the document and runs past the end', () => {
   // "4-99" on a 5-page file is a reasonable "from here to the end" intent.
   assert.deepEqual(parsePages('4-99', 5), [3, 4]);
+});
+
+/* ── split ranges ─────────────────────────────────────────────────────── */
+
+test('parseRangeList keeps ranges as ranges, one output file each', () => {
+  assert.deepEqual(parseRangeList('1-10, 11-25', 40), [
+    { from: 1, to: 10 },
+    { from: 11, to: 25 },
+  ]);
+});
+
+test('parseRangeList accepts a bare page as a one-page range', () => {
+  assert.deepEqual(parseRangeList('7', 40), [{ from: 7, to: 7 }]);
+});
+
+test('parseRangeList normalises a reversed range', () => {
+  assert.deepEqual(parseRangeList('10-3', 40), [{ from: 3, to: 10 }]);
+});
+
+test('parseRangeList clamps a range running past the last page', () => {
+  assert.deepEqual(parseRangeList('30-999', 40), [{ from: 30, to: 40 }]);
+});
+
+test('parseRangeList rejects a range that starts past the end', () => {
+  assert.throws(() => parseRangeList('50-60', 40), /ไม่ถูกต้องหรือเกินจำนวนหน้า/);
+  assert.throws(() => parseRangeList('abc', 40), /abc/);
+});
+
+test('parseRangeList requires at least one range', () => {
+  assert.throws(() => parseRangeList('', 40), /อย่างน้อยหนึ่งช่วง/);
+  assert.throws(() => parseRangeList('  , ', 40), /อย่างน้อยหนึ่งช่วง/);
 });

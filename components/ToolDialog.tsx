@@ -46,12 +46,19 @@ export type ToolDialogProps = {
   orderable?: boolean;
   /** Read-aloud has no "run" button — it owns its own transport controls. */
   hideRunButton?: boolean;
+  /** Split and Merge render a page/file workspace and need the room. */
+  wide?: boolean;
+  /** Merge shows its own visual file cards, so the plain list would duplicate it. */
+  hideFileList?: boolean;
+  /** Lets a workspace re-open the file picker to append more files. */
+  registerPicker?: (open: () => void) => void;
 };
 
 export function ToolDialog({
   tool, files, onFiles, onSetFiles, onClose, onRun, onCancel,
   state, message, progress, children, fileless = false,
   orderable = false, hideRunButton = false,
+  wide = false, hideFileList = false, registerPicker,
 }: ToolDialogProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -105,6 +112,12 @@ export function ToolDialog({
     [busy, onCancel, onClose],
   );
 
+  // Hand the "open the file picker" action out, so a workspace can offer its
+  // own "add more files" button without duplicating the input.
+  useEffect(() => {
+    registerPicker?.(() => inputRef.current?.click());
+  }, [registerPicker]);
+
   // Warn before the tab is closed mid-job — the work is unrecoverable.
   useEffect(() => {
     if (!busy) return;
@@ -128,7 +141,9 @@ export function ToolDialog({
         aria-describedby={descriptionId}
         tabIndex={-1}
         onKeyDown={onKeyDown}
-        className="max-h-[92vh] w-full max-w-[640px] overflow-auto rounded-t-[28px] bg-card shadow-[var(--shadow-4)] outline-none sm:rounded-[28px]"
+        className={`max-h-[92vh] w-full overflow-auto rounded-t-[28px] bg-card shadow-[var(--shadow-4)] outline-none sm:rounded-[28px] ${
+          wide ? 'max-w-[1040px]' : 'max-w-[640px]'
+        }`}
       >
         <header className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-line bg-card px-5 py-4 sm:px-7">
           <div className="flex min-w-0 items-center gap-3">
@@ -192,7 +207,7 @@ export function ToolDialog({
             </>
           )}
 
-          <FileList files={files} onChange={onSetFiles} orderable={orderable} />
+          {!hideFileList && <FileList files={files} onChange={onSetFiles} orderable={orderable} />}
 
           {children}
 

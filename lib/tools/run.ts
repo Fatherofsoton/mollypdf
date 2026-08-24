@@ -16,7 +16,7 @@
 import { toolById, type Tool } from './registry';
 import { assertFileTypes, assertWithinLimits, step, throwIfAborted, type RunContext } from '../runtime';
 import { openPdf } from '../pdf/pdfjs';
-import { parsePages } from '../pdf/pages';
+import { parsePages, parseRangeList } from '../pdf/pages';
 import { canvasToBlob, releaseCanvas, renderPages } from '../pdf/render';
 import { ocrPagesToSearchablePdf, pagesToPdf, textToSearchablePdf, toPdfBlob, type OcrWord } from '../pdf/compose';
 import { countWords, extractPages, joinTextItems } from '../pdf/text';
@@ -113,17 +113,100 @@ export async function runTool(toolId: string, input: ToolInput, ctx: RunContext)
       const JSZip = (await import('jszip')).default;
       const { PDFDocument } = await import('pdf-lib');
       const source = await loadPdfLib(files[0]);
+      const total = source.getPageCount();
       const zip = new JSZip();
-      const indices = source.getPageIndices();
-      for (const index of indices) {
-        const one = await PDFDocument.create();
-        const [page] = await one.copyPages(source, [index]);
-        one.addPage(page);
-        zip.file(`หน้า-${index + 1}.pdf`, await one.save());
-        await step(ctx, index + 1, indices.length, `กำลังแยกหน้า ${index + 1}`);
+
+      /** Copy a 1-based inclusive page span into a fresh document. */
+      const slice = async (from: number, to: number) => {
+        const out = await PDFDocument.create();
+        const indices = [];
+        for (let i = from - 1; i <= to - 1; i++) indices.push(i);
+        const copied = await out.copyPages(source, indices);
+        copied.forEach((page) => out.addPage(page));
+        return out;
+      };
+
+      const mode = options.splitMode ?? 'pages';
+
+      /* ── by range ── */
+      if (mode === 'range') {
+        const ranges = parseRangeList(options.ranges ?? '', total);
+
+        if (options.mergeRanges === 'true') {
+          const out = await PDFDocument.create();
+          for (const [i, range] of ranges.entries()) {
+            const indices = [];
+            for (let n = range.from - 1; n <= range.to - 1; n++) indices.push(n);
+            const copied = await out.copyPages(source, indices);
+            copied.forEach((page) => out.addPage(page));
+            await step(ctx, i + 1, ranges.length, `กำลังรวมช่วงที่ ${i + 1}`);
+          }
+          return deliver(
+            toPdfBlob(await out.save()),
+            `${name}-ช่วงที่เลือก.pdf`,
+            out.getPageCount(),
+            `รวม ${ranges.length} ช่วง เป็น ${out.getPageCount()} หน้า`,
+          );
+        }
+
+        for (const [i, range] of ranges.entries()) {
+          const out = await slice(range.from, range.to);
+          zip.file(`หน้า-${range.from}-ถึง-${range.to}.pdf`, await out.save());
+          await step(ctx, i + 1, ranges.length, `กำลังแยกช่วงที่ ${i + 1} จาก ${ranges.length}`);
+        }
+        return deliver(
+          await zip.generateAsync({ type: 'blob' }),
+          `${name}-แยกตามช่วง.zip`,
+          total,
+          `ได้ ${ranges.length} ไฟล์`,
+        );
       }
-      const blob = await zip.generateAsync({ type: 'blob' });
-      return deliver(blob, `${name}-แยกหน้า.zip`, indices.length, `ได้ ${indices.length} ไฟล์`);
+
+      /* ── by size ──
+         Saving after every added page to measure it would be O(n²) on a large
+         document. Estimate from the average page weight instead, then verify
+         each chunk once and report anything that still came out over. */
+      if (mode === 'size') {
+        const maxBytes = Math.max(1, Number(options.maxSizeMb || '10')) * 1024 * 1024;
+        const perPage = Math.max(1, files[0].size / total);
+        const pagesPerChunk = Math.max(1, Math.floor(maxBytes / perPage));
+        const chunks: Array<{ from: number; to: number }> = [];
+        for (let from = 1; from <= total; from += pagesPerChunk) {
+          chunks.push({ from, to: Math.min(total, from + pagesPerChunk - 1) });
+        }
+
+        let oversize = 0;
+        for (const [i, chunk] of chunks.entries()) {
+          const out = await slice(chunk.from, chunk.to);
+          const bytes = await out.save();
+          if (bytes.byteLength > maxBytes) oversize++;
+          zip.file(`ส่วนที่-${i + 1}_หน้า-${chunk.from}-${chunk.to}.pdf`, bytes);
+          await step(ctx, i + 1, chunks.length, `กำลังแยกส่วนที่ ${i + 1} จาก ${chunks.length}`);
+        }
+        const note =
+          `ได้ ${chunks.length} ไฟล์` +
+          (oversize ? ` — มี ${oversize} ไฟล์ที่ยังเกินขนาดที่ตั้งไว้ เพราะหน้าเดียวก็ใหญ่เกินแล้ว` : '');
+        return deliver(await zip.generateAsync({ type: 'blob' }), `${name}-แยกตามขนาด.zip`, total, note);
+      }
+
+      /* ── page by page ── */
+      const wanted =
+        options.extractMode === 'selected'
+          ? parsePages(options.selectedPages ?? '', total)
+          : source.getPageIndices();
+      if (!wanted.length) throw new Error('ยังไม่ได้เลือกหน้าที่ต้องการแยก');
+
+      for (const [i, index] of wanted.entries()) {
+        const out = await slice(index + 1, index + 1);
+        zip.file(`หน้า-${index + 1}.pdf`, await out.save());
+        await step(ctx, i + 1, wanted.length, `กำลังแยกหน้า ${index + 1}`);
+      }
+      return deliver(
+        await zip.generateAsync({ type: 'blob' }),
+        `${name}-แยกหน้า.zip`,
+        wanted.length,
+        `ได้ ${wanted.length} ไฟล์`,
+      );
     }
 
     case 'organize': {
@@ -213,13 +296,14 @@ export async function runTool(toolId: string, input: ToolInput, ctx: RunContext)
 
     /* ---------------- file tuning ---------------- */
     case 'compress': {
-      const result = await compressPdf(files[0], ctx);
+      const level = (options.compressLevel ?? 'recommended') as 'extreme' | 'recommended' | 'less';
+      const result = await compressPdf(files[0], ctx, level);
       const saved = Math.max(0, result.before - result.after);
       const percent = result.before ? Math.round((saved / result.before) * 100) : 0;
       const note =
         result.method === 'unchanged'
           ? 'ไฟล์นี้บีบอัดต่อไม่ได้แล้ว เราจึงคืนไฟล์ที่จัดโครงสร้างใหม่ให้แทน (ไม่ได้ทำให้ใหญ่ขึ้น)'
-          : `เล็กลง ${percent}% (${(saved / 1048576).toFixed(1)} MB)`;
+          : `เล็กลง ${percent}% — จาก ${(result.before / 1048576).toFixed(1)} MB เหลือ ${(result.after / 1048576).toFixed(1)} MB`;
       return deliver(result.blob, `${name}-บีบอัด.pdf`, 1, note);
     }
 
