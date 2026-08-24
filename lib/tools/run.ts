@@ -211,12 +211,34 @@ export async function runTool(toolId: string, input: ToolInput, ctx: RunContext)
 
     case 'organize': {
       const doc = await loadPdfLib(files[0]);
-      const order = parsePages(text, doc.getPageCount(), true);
-      const { PDFDocument } = await import('pdf-lib');
+      // The workspace writes `pageOrder`; the old text field is still honoured
+      // so a saved link or a typed "1, 3, 2" keeps working.
+      const source = options.pageOrder?.trim() || text;
+      const order = parsePages(source, doc.getPageCount(), true);
+      if (!order.length) throw new Error('ต้องเหลืออย่างน้อย 1 หน้า');
+      const { PDFDocument, degrees } = await import('pdf-lib');
       const out = await PDFDocument.create();
       const copied = await out.copyPages(doc, order);
-      copied.forEach((page) => out.addPage(page));
-      return deliver(toPdfBlob(await out.save()), `${name}-จัดหน้า.pdf`, order.length);
+
+      // "3:90,5:180" — keyed by the position in the NEW document, because that
+      // is what the user was looking at when they pressed rotate.
+      const turns = new Map<number, number>();
+      for (const pair of (options.pageRotations ?? '').split(',')) {
+        const [slot, angle] = pair.split(':').map((part) => Number(part.trim()));
+        if (slot > 0 && Number.isFinite(angle)) turns.set(slot, ((angle % 360) + 360) % 360);
+      }
+
+      copied.forEach((page, index) => {
+        const turn = turns.get(index + 1);
+        if (turn) page.setRotation(degrees((page.getRotation().angle + turn) % 360));
+        out.addPage(page);
+      });
+
+      const changed = [
+        order.length !== doc.getPageCount() ? `เหลือ ${order.length} หน้า` : '',
+        turns.size ? `หมุน ${turns.size} หน้า` : '',
+      ].filter(Boolean).join(' · ');
+      return deliver(toPdfBlob(await out.save()), `${name}-จัดหน้า.pdf`, order.length, changed || undefined);
     }
 
     case 'remove-pages': {
