@@ -1,0 +1,241 @@
+/* GENERATED FILE — do not edit.
+   Source: tokens/colors.json · Rebuild: node scripts/build-tokens.mjs
+   Editing this file directly will be overwritten and will fail `--check` in CI.
+
+   Three tiers, per the DTCG model:
+     1. primitive  raw palette, identical in every theme
+     2. semantic   purpose-named aliases — the only tier a component may name
+     3. component  written in app/globals.css, references tier 2 only
+
+   The theme blocks below cover all three states a viewer can be in: an explicit
+   light choice, the un-stamped default where only the OS preference speaks, and
+   an explicit dark choice. A token defined in fewer than all of them is the bug
+   this pipeline exists to prevent. */
+
+/* ── Tier 1 — primitives ─────────────────────────────────────────────────── */
+:root {
+  --p-azure-50: #eef5fa;
+  --p-azure-100: #e8f2f9;
+  --p-azure-200: #a8d8f0;
+  --p-azure-300: #a5d3ec;
+  --p-azure-400: #8fcbe9;
+  --p-azure-500: #7ab8de;
+  --p-azure-550: #6fb6dd;
+  --p-azure-600: #7fb3d2;
+  --p-azure-700: #3f7fa3;
+  --p-azure-750: #2774a3;
+  --p-azure-800: #0a5f8c;
+  --p-azure-850: #17405c;
+  --p-azure-900: #0d3c5f;
+  --p-azure-950: #12303f;
+  --p-azure-980: #0d2c3f;
+  --p-ink-25: #f6f8fb;
+  --p-ink-50: #eef3f8;
+  --p-ink-100: #dbe4ed;
+  --p-ink-200: #c3d2df;
+  --p-ink-300: #a9c2d4;
+  --p-ink-400: #9db1c1;
+  --p-ink-450: #94a9ba;
+  --p-ink-500: #8ba0b1;
+  /* Light-theme control edge — 3.40:1 on white, clears WCAG 1.4.11. */
+  --p-ink-550: #7d8d9d;
+  --p-ink-600: #6b7f92;
+  --p-ink-650: #5f7183;
+  --p-ink-700: #5a6e80;
+  --p-ink-750: #33485c;
+  /* Dark-theme decorative rule — 1.28:1 against the dark card, visible but quiet. */
+  --p-ink-800: #24404f;
+  /* Dark surface: raised (dialogs, popovers). */
+  --p-ink-850: #1d3e56;
+  /* Dark surface: card — 1.31:1 above the dark page, so elevation reads without a shadow. */
+  --p-ink-870: #162e40;
+  --p-ink-880: #072742;
+  --p-ink-890: #06253d;
+  --p-ink-900: #05202f;
+  /* Dark surface: page. */
+  --p-ink-920: #0a1620;
+  --p-ink-940: #061722;
+  /* Dark surface: sunken — below the page, not above it. Deep enough to read as a well, not so deep it looks like a hole punched through the dialog. */
+  --p-ink-950: #070f17;
+  --p-teal-50: #e6f6f1;
+  --p-teal-350: #64ccb8;
+  --p-teal-400: #59c9ac;
+  --p-teal-600: #168776;
+  --p-teal-700: #0a7a63;
+  --p-teal-900: #103e34;
+  --p-teal-950: #10302a;
+  --p-amber-50: #fdf3e2;
+  --p-amber-400: #e0b269;
+  --p-amber-700: #9a6512;
+  --p-amber-900: #453820;
+  --p-amber-950: #2f2617;
+  --p-clay-50: #fdeeec;
+  --p-clay-400: #e88b83;
+  --p-clay-600: #b54f5d;
+  --p-clay-700: #a63d3d;
+  --p-clay-800: #8a3030;
+  --p-clay-900: #4a2c2a;
+  --p-clay-950: #33201f;
+  --p-iris-400: #a99af0;
+  --p-iris-700: #6857b8;
+  --p-white: #ffffff;
+}
+
+/* ── Tier 2 — semantic, light ────────────────────────────────────────────── */
+:root {
+  --surface-page: var(--p-ink-25);
+  --surface-card: var(--p-white);
+  --surface-raised: var(--p-white);
+  --surface-sunken: var(--p-ink-50);
+  --surface-inverse: var(--p-ink-890);
+  --surface-inverse-soft: var(--p-azure-980);
+  --text-strong: var(--p-ink-880);
+  --text-body: var(--p-ink-750);
+  --text-muted: var(--p-ink-700);
+  --text-subtle: var(--p-ink-650);
+  --text-on-inverse: var(--p-azure-50);
+  --text-on-inverse-muted: var(--p-ink-300);
+  --brand: var(--p-azure-800);
+  --brand-strong: var(--p-azure-900);
+  --brand-soft: var(--p-azure-100);
+  --action-bg: var(--p-azure-800);
+  --action-bg-hover: var(--p-azure-900);
+  --action-bg-active: var(--p-ink-890);
+  --action-fg: var(--p-white);
+  /* Intent, not hue: a destructive control must never borrow action.bg. */
+  --action-destructive: var(--p-clay-700);
+  --action-destructive-hover: var(--p-clay-800);
+  --action-destructive-fg: var(--p-white);
+  --feedback-success-bg: var(--p-teal-50);
+  --feedback-success-text: var(--p-teal-700);
+  --feedback-success-border: var(--p-teal-600);
+  --feedback-success-icon: var(--p-teal-700);
+  --feedback-warning-bg: var(--p-amber-50);
+  --feedback-warning-text: var(--p-amber-700);
+  --feedback-warning-border: var(--p-amber-400);
+  --feedback-warning-icon: var(--p-amber-700);
+  --feedback-error-bg: var(--p-clay-50);
+  --feedback-error-text: var(--p-clay-700);
+  --feedback-error-border: var(--p-clay-600);
+  --feedback-error-icon: var(--p-clay-700);
+  --interactive-selected-bg: var(--p-azure-100);
+  --interactive-selected-border: var(--p-azure-800);
+  /* 4.13:1 on the page ground — WCAG 1.4.11 wants 3:1 of a focus indicator. */
+  --interactive-focus-ring: var(--p-azure-700);
+  --line: var(--p-ink-100);
+  --line-strong: var(--p-ink-550);
+  --category-violet: var(--p-iris-700);
+  --category-blue: var(--p-azure-750);
+  --category-green: var(--p-teal-700);
+  --category-amber: var(--p-amber-700);
+  --category-rose: var(--p-clay-600);
+  --category-mint: var(--p-teal-600);
+
+  color-scheme: light;
+}
+
+/* ── Tier 2 — semantic, dark by OS preference (an explicit light choice wins) ─ */
+:root:not([data-theme='light']) {
+  @media (prefers-color-scheme: dark) {
+    --surface-page: var(--p-ink-920);
+    --surface-card: var(--p-ink-870);
+    --surface-raised: var(--p-ink-850);
+    --surface-sunken: var(--p-ink-950);
+    --surface-inverse: var(--p-ink-940);
+    --surface-inverse-soft: var(--p-azure-980);
+    --text-strong: var(--p-ink-50);
+    --text-body: var(--p-ink-200);
+    --text-muted: var(--p-ink-400);
+    --text-subtle: var(--p-ink-450);
+    --text-on-inverse: var(--p-ink-50);
+    --text-on-inverse-muted: var(--p-ink-400);
+    --brand: var(--p-azure-550);
+    --brand-strong: var(--p-azure-300);
+    --brand-soft: var(--p-azure-850);
+    --action-bg: var(--p-azure-400);
+    --action-bg-hover: var(--p-azure-200);
+    --action-bg-active: var(--p-azure-300);
+    --action-fg: var(--p-ink-900);
+    --action-destructive: var(--p-clay-400);
+    --action-destructive-hover: var(--p-clay-50);
+    --action-destructive-fg: var(--p-ink-900);
+    --feedback-success-bg: var(--p-teal-900);
+    --feedback-success-text: var(--p-teal-400);
+    --feedback-success-border: var(--p-teal-600);
+    --feedback-success-icon: var(--p-teal-400);
+    --feedback-warning-bg: var(--p-amber-900);
+    --feedback-warning-text: var(--p-amber-400);
+    --feedback-warning-border: var(--p-amber-700);
+    --feedback-warning-icon: var(--p-amber-400);
+    --feedback-error-bg: var(--p-clay-900);
+    --feedback-error-text: var(--p-clay-400);
+    --feedback-error-border: var(--p-clay-600);
+    --feedback-error-icon: var(--p-clay-400);
+    --interactive-selected-bg: var(--p-azure-850);
+    --interactive-selected-border: var(--p-azure-550);
+    --interactive-focus-ring: var(--p-azure-550);
+    --line: var(--p-ink-800);
+    --line-strong: var(--p-ink-600);
+    --category-violet: var(--p-iris-400);
+    --category-blue: var(--p-azure-500);
+    --category-green: var(--p-teal-400);
+    --category-amber: var(--p-amber-400);
+    --category-rose: var(--p-clay-400);
+    /* Distinct from category.green — two categories sharing one colour is not a category system. */
+    --category-mint: var(--p-teal-350);
+
+    color-scheme: dark;
+  }
+}
+
+/* ── Tier 2 — semantic, dark by explicit choice ──────────────────────────── */
+:root[data-theme='dark'] {
+  --surface-page: var(--p-ink-920);
+  --surface-card: var(--p-ink-870);
+  --surface-raised: var(--p-ink-850);
+  --surface-sunken: var(--p-ink-950);
+  --surface-inverse: var(--p-ink-940);
+  --surface-inverse-soft: var(--p-azure-980);
+  --text-strong: var(--p-ink-50);
+  --text-body: var(--p-ink-200);
+  --text-muted: var(--p-ink-400);
+  --text-subtle: var(--p-ink-450);
+  --text-on-inverse: var(--p-ink-50);
+  --text-on-inverse-muted: var(--p-ink-400);
+  --brand: var(--p-azure-550);
+  --brand-strong: var(--p-azure-300);
+  --brand-soft: var(--p-azure-850);
+  --action-bg: var(--p-azure-400);
+  --action-bg-hover: var(--p-azure-200);
+  --action-bg-active: var(--p-azure-300);
+  --action-fg: var(--p-ink-900);
+  --action-destructive: var(--p-clay-400);
+  --action-destructive-hover: var(--p-clay-50);
+  --action-destructive-fg: var(--p-ink-900);
+  --feedback-success-bg: var(--p-teal-900);
+  --feedback-success-text: var(--p-teal-400);
+  --feedback-success-border: var(--p-teal-600);
+  --feedback-success-icon: var(--p-teal-400);
+  --feedback-warning-bg: var(--p-amber-900);
+  --feedback-warning-text: var(--p-amber-400);
+  --feedback-warning-border: var(--p-amber-700);
+  --feedback-warning-icon: var(--p-amber-400);
+  --feedback-error-bg: var(--p-clay-900);
+  --feedback-error-text: var(--p-clay-400);
+  --feedback-error-border: var(--p-clay-600);
+  --feedback-error-icon: var(--p-clay-400);
+  --interactive-selected-bg: var(--p-azure-850);
+  --interactive-selected-border: var(--p-azure-550);
+  --interactive-focus-ring: var(--p-azure-550);
+  --line: var(--p-ink-800);
+  --line-strong: var(--p-ink-600);
+  --category-violet: var(--p-iris-400);
+  --category-blue: var(--p-azure-500);
+  --category-green: var(--p-teal-400);
+  --category-amber: var(--p-amber-400);
+  --category-rose: var(--p-clay-400);
+  /* Distinct from category.green — two categories sharing one colour is not a category system. */
+  --category-mint: var(--p-teal-350);
+
+  color-scheme: dark;
+}
