@@ -795,6 +795,66 @@ try {
     }
   });
 
+  await check('จัดเรียงหน้า shows real pages, not a text box', async () => {
+    await page.goto(`${BASE}/?tool=organize`, { waitUntil: 'domcontentloaded' });
+    const dialog = page.locator('[role="dialog"]');
+    await dialog.waitFor();
+    await dialog.locator('input[type="file"]').setInputFiles(join(fixtures, 'thai-4page-with-blanks.pdf'));
+    await dialog.locator('[data-testid="organize-card"]').nth(3).waitFor({ timeout: 45_000 });
+    const cards = await dialog.locator('[data-testid="organize-card"]').count();
+    assert(cards === 4, `expected 4 page cards, saw ${cards}`);
+    assert(
+      (await dialog.locator('#tool-input').count()) === 0,
+      'the old "ลำดับหน้าใหม่" text box is still there competing with the grid',
+    );
+    await page.keyboard.press('Escape');
+  });
+
+  await check('a page can be moved without dragging — WCAG 2.5.7', async () => {
+    await page.goto(`${BASE}/?tool=organize`, { waitUntil: 'domcontentloaded' });
+    const dialog = page.locator('[role="dialog"]');
+    await dialog.waitFor();
+    await dialog.locator('input[type="file"]').setInputFiles(join(fixtures, 'thai-4page-with-blanks.pdf'));
+    await dialog.locator('[data-testid="organize-card"]').nth(3).waitFor({ timeout: 45_000 });
+
+    // Move page 1 right twice using the button alternative, then check the
+    // order the runner will actually receive.
+    await dialog.locator('[data-testid="organize-card"]').first()
+      .locator('button[aria-label*="ไปทางขวา"]').click();
+    await dialog.locator('[data-testid="organize-card"]').nth(1)
+      .locator('button[aria-label*="ไปทางขวา"]').click();
+    const label = await dialog.locator('[data-testid="organize-card"]').nth(2)
+      .locator('[role="group"]').getAttribute('aria-label');
+    assert(/หน้า 1 ของต้นฉบับ/.test(label ?? ''), `page 1 did not land in slot 3 (label: ${label})`);
+    await page.keyboard.press('Escape');
+  });
+
+  await check('reordering really changes the produced PDF', async () => {
+    await page.goto(`${BASE}/?tool=organize`, { waitUntil: 'domcontentloaded' });
+    const dialog = page.locator('[role="dialog"]');
+    await dialog.waitFor();
+    await dialog.locator('input[type="file"]').setInputFiles(join(fixtures, 'thai-4page-with-blanks.pdf'));
+    await dialog.locator('[data-testid="organize-card"]').nth(3).waitFor({ timeout: 45_000 });
+    // Drop the last page, then save.
+    await dialog.locator('[data-testid="organize-card"]').last()
+      .locator('button[aria-label*="ลบหน้า"]').click();
+    const downloadPromise = page.waitForEvent('download', { timeout: 60_000 }).catch(() => null);
+    await dialog.getByRole('button', { name: /เริ่มจัดเรียงหน้า/ }).click();
+    const file = await downloadPromise;
+    assert(file, 'no file produced by จัดเรียงหน้า');
+    const bytes = new Uint8Array(await readFile(await file.path()));
+    assert(bytes.length > 400, 'organize produced an empty file');
+    assert(Buffer.from(bytes.subarray(0, 5)).toString() === '%PDF-', 'organize did not produce a PDF');
+
+    const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
+    const task = pdfjs.getDocument({ data: bytes });
+    const doc = await task.promise;
+    const pages = doc.numPages;
+    await task.destroy();
+    assert(pages === 3, `dropping one page of four should leave 3, got ${pages}`);
+    await page.keyboard.press('Escape');
+  });
+
   await context.close();
 } finally {
   await browser?.close();
