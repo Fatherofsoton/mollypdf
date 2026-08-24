@@ -436,15 +436,48 @@ export async function runTool(toolId: string, input: ToolInput, ctx: RunContext)
     case 'pdf-jpg':
     case 'pdf-png': {
       const JSZip = (await import('jszip')).default;
-      const zip = new JSZip();
       const jpg = toolId === 'pdf-jpg';
+
+      // Only the pages the user ticked, at the resolution they chose.
+      // 2x the 72 dpi page box is ~150 dpi (print floor); 3x is ~220 dpi.
+      const scale = options.imageQuality === 'high' ? 3 : 2;
+      const wanted =
+        options.exportMode === 'selected' && options.selectedPages
+          ? new Set(options.selectedPages.split(',').map(Number).filter(Boolean))
+          : null;
+      if (options.exportMode === 'selected' && !wanted?.size) {
+        throw new Error('ยังไม่ได้เลือกหน้าที่ต้องการแปลงเป็นภาพ');
+      }
+
+      const zip = new JSZip();
+      let single: { blob: Blob; page: number } | null = null;
       let count = 0;
-      for await (const rendered of renderPages(files[0], ctx, { scale: 2, label: 'กำลังแปลงหน้า' })) {
-        const blob = await canvasToBlob(rendered.canvas, jpg ? 'image/jpeg' : 'image/png', 0.9);
-        zip.file(`หน้า-${rendered.index + 1}.${jpg ? 'jpg' : 'png'}`, blob);
+
+      for await (const rendered of renderPages(files[0], ctx, { scale, label: 'กำลังแปลงหน้า' })) {
+        const page = rendered.index + 1;
+        if (wanted && !wanted.has(page)) {
+          releaseCanvas(rendered.canvas);
+          continue;
+        }
+        const blob = await canvasToBlob(rendered.canvas, jpg ? 'image/jpeg' : 'image/png', 0.92);
+        zip.file(`หน้า-${page}.${jpg ? 'jpg' : 'png'}`, blob);
+        if (count === 0) single = { blob, page };
         releaseCanvas(rendered.canvas);
         count++;
       }
+
+      if (!count) throw new Error('ไม่มีหน้าที่ตรงกับที่เลือกไว้');
+
+      // One page should come back as the image itself, not a zip holding one file.
+      if (count === 1 && single) {
+        return deliver(
+          single.blob,
+          `${name}-หน้า-${single.page}.${jpg ? 'jpg' : 'png'}`,
+          1,
+          'ได้ 1 ภาพ',
+        );
+      }
+
       const archive = await zip.generateAsync({ type: 'blob' });
       return deliver(archive, `${name}-${jpg ? 'jpg' : 'png'}.zip`, count, `ได้ ${count} ภาพ`);
     }
