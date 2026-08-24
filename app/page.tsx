@@ -664,7 +664,11 @@ export default function Home() {
           files={files}
           fileless={FILELESS.has(selected.id)}
           // Split shows a page grid and Merge shows cover cards; both need room.
-          wide={selected.id === 'split' || selected.id === 'merge'}
+          // Anything with a page preview needs the room: a 640px column makes
+          // the preview too small to place a signature accurately.
+          wide={['split', 'merge', 'sign', 'edit', 'watermark', 'header-footer', 'pdf-jpg', 'pdf-png'].includes(
+            selected.id,
+          )}
           // Merge renders its own visual cards, so the plain list would be a
           // second, competing set of reorder controls for the same files.
           hideFileList={selected.id === 'merge'}
@@ -746,6 +750,17 @@ export default function Home() {
               </div>
             )}
 
+          {/* เซ็นเอกสาร is two jobs at once — make the mark, then say where it
+              goes — and stacking them meant the page preview started below the
+              fold on a laptop. Side by side on a wide screen, both are visible
+              together; the grid collapses back to a stack on narrow ones. */}
+          <div
+            className={
+              selected.id === 'sign'
+                ? 'grid items-start gap-6 lg:grid-cols-[minmax(0,380px)_minmax(0,1fr)]'
+                : 'space-y-4'
+            }
+          >
           {selected.id === 'sign' && (
             <SignaturePad
               typed={toolText}
@@ -795,6 +810,7 @@ export default function Home() {
             onAddFiles={() => openPickerRef.current?.()}
             text={toolText}
           />
+          </div>
 
           {selected.id === 'ocr' && (
             <p className="text-xs leading-6 text-muted">
