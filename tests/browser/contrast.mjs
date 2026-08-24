@@ -79,11 +79,23 @@ const PAIRS = [
   ['line-strong on card (control edge)', '--line-strong', '--surface-card', 3],
   ['on-inverse text on inverse band', '--text-on-inverse', '--surface-inverse', 4.5],
 ];
+
+/**
+ * Elevation has to be visible, not just declared. Adjacent surfaces that differ
+ * by less than about 1.2:1 read as one flat plane, which is what the dark theme
+ * used to do — page/card sat 1.13:1 apart and every panel edge came from a
+ * shadow instead of the surface itself.
+ */
+const STEPS = [
+  ['sunken -> page', '--surface-sunken', '--surface-page', 1.05],
+  ['page -> card', '--surface-page', '--surface-card', 1.05],
+  ['card -> raised', '--surface-card', '--surface-raised', 1.0],
+];
 let bad = 0;
 for (const scheme of ['light', 'dark']) {
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 }, colorScheme: scheme });
   await page.goto(BASE, { waitUntil: 'networkidle' });
-  const res = await page.evaluate((pairs) => {
+  const res = await page.evaluate(([pairs, stepPairs]) => {
     const probe = document.createElement('div');
     document.body.appendChild(probe);
     const hex = (name) => {
@@ -102,10 +114,50 @@ for (const scheme of ['light', 'dark']) {
       const ratio = +(((Math.max(x,y)+0.05)/(Math.min(x,y)+0.05)).toFixed(2));
       return { name, ratio, min, pass: ratio >= min, fg: ha, bg: hb };
     });
-    probe.remove();
+    // Category hues are drawn as `color-mix()` over the card, so the only
+    // honest way to check them is to ask the browser what it actually painted.
+    const icons = [...document.querySelectorAll('.tool-icon')].map((node) => {
+      const cs = getComputedStyle(node);
+      const toHex = (value) => {
+        // `color-mix()` computes to `color(srgb 0.06 0.19 0.25)`, which no
+        // string parse survives. Painting it and reading the pixel back is the
+        // only answer that matches what the eye receives.
+        const canvas = document.createElement('canvas');
+        canvas.width = canvas.height = 1;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, 1, 1);
+        ctx.fillStyle = value;
+        ctx.fillRect(0, 0, 1, 1);
+        const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
+        return '#' + [r, g, b].map((n) => n.toString(16).padStart(2, '0')).join('');
+      };
+      return {
+        name: [...node.classList].find((c) => c.startsWith('tool-') && c !== 'tool-icon') ?? 'tool',
+        fg: toHex(cs.color),
+        bg: toHex(cs.backgroundColor),
+      };
+    });
+    const seen = new Map();
+    for (const icon of icons) if (icon.fg && icon.bg && !seen.has(icon.name)) seen.set(icon.name, icon);
+    const categories = [...seen.values()].map(({ name, fg, bg }) => {
+      const [x, y] = [lum(fg), lum(bg)];
+      const ratio = +(((Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05)).toFixed(2));
+      return { name: `ไอคอนหมวด ${name.replace('tool-', '')}`, ratio, min: 3, pass: ratio >= 3, fg, bg };
+    });
+
+    const steps = stepPairs.map(([name, a, b, min]) => {
+      const [ha, hb] = [hex(a), hex(b)];
+      if (!ha || !hb) return { name, ratio: null, min, pass: false, note: 'unresolved' };
+      const [x, y] = [lum(ha), lum(hb)];
+      const ratio = +(((Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05)).toFixed(2));
+      return { name, ratio, min, pass: ratio >= min, fg: ha, bg: hb };
+    });
+
     const btn = document.querySelector('.btn-primary');
-    return { button: btn && getComputedStyle(btn).backgroundColor, out };
-  }, PAIRS);
+    probe.remove();
+    return { button: btn && getComputedStyle(btn).backgroundColor, out: [...out, ...categories, ...steps] };
+  }, [PAIRS, STEPS]);
   console.log(`\n=== ${scheme} ===  .btn-primary background: ${res.button}`);
   for (const r of res.out) {
     if (!r.pass) bad++;
