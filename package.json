@@ -15,8 +15,11 @@
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test tests/*.test.ts",
     "test:browser": "node tests/browser/run.mjs",
-    "verify": "pnpm typecheck && pnpm lint && pnpm test && pnpm build",
-    "db:generate": "drizzle-kit generate"
+    "verify": "pnpm tokens:check && pnpm typecheck && pnpm lint && pnpm test && pnpm build",
+    "db:generate": "drizzle-kit generate",
+    "tokens": "node scripts/build-tokens.mjs",
+    "tokens:check": "node scripts/build-tokens.mjs --check",
+    "test:contrast": "node tests/browser/contrast.mjs"
   },
   "dependencies": {
     "@cantoo/pdf-lib": "^2.9.1",
