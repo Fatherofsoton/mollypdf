@@ -90,7 +90,7 @@ async function runToolWith(page, toolId, { file, text } = {}) {
     .getByRole('button', { name: 'ยกเลิก' })
     .waitFor({ state: 'detached', timeout: 60_000 })
     .catch(() => {});
-  const status = (await dialog.locator('[role="status"]').innerText()).trim();
+  const status = (await dialog.locator('[data-testid="run-status"]').innerText()).trim();
   return { download, status };
 }
 
@@ -360,6 +360,19 @@ try {
     await picker.close();
   });
 
+  await check('every download arrives with a real, openable filename', async () => {
+    // Split names its output in Thai ("<ชื่อ>-แยกหน้า.zip"), which is exactly
+    // the case Chromium used to discard, leaving a file called "download".
+    const { download, status } = await runToolWith(page, 'split', {
+      file: 'thai-4page-with-blanks.pdf',
+    });
+    assert(download, `nothing downloaded. status: ${status}`);
+    const saved = download.suggestedFilename();
+    assert(saved !== 'download', 'the browser discarded the filename entirely');
+    assert(/\.[a-z0-9]+$/i.test(saved), `no extension: ${saved}`);
+    assert(/^[ -~]+$/.test(saved), `not ascii, so browsers may discard it: ${saved}`);
+  });
+
   await check('no uncaught page errors during the run', async () => {
     assert(consoleErrors.length === 0, consoleErrors.join('\n'));
   });
@@ -579,7 +592,7 @@ try {
     const downloadPromise = page.waitForEvent('download', { timeout: 90_000 }).catch(() => null);
     await dialog.getByRole('button', { name: /^เริ่ม/ }).click();
     const download = await downloadPromise;
-    const status = (await dialog.locator('[role="status"]').first().innerText()).trim();
+    const status = (await dialog.locator('[data-testid="run-status"]').innerText()).trim();
     assert(download, `no comparison produced. status: ${status}`);
     assert(!/is not a function/.test(status), `pdf.js failed: ${status}`);
   });
@@ -622,7 +635,7 @@ try {
     const downloadPromise = page.waitForEvent('download', { timeout: 60_000 }).catch(() => null);
     await dialog.getByRole('button', { name: /^เริ่ม/ }).click();
     const download = await downloadPromise;
-    const status = (await dialog.locator('[role="status"]').first().innerText()).trim();
+    const status = (await dialog.locator('[data-testid="run-status"]').innerText()).trim();
     assert(download, `unlock produced nothing. status: ${status}`);
 
     const out = await readFile(await download.path());
@@ -649,7 +662,7 @@ try {
     const downloadPromise = page.waitForEvent('download', { timeout: 20_000 }).catch(() => null);
     await dialog.getByRole('button', { name: /^เริ่ม/ }).click();
     const download = await downloadPromise;
-    const status = (await dialog.locator('[role="status"]').first().innerText()).trim();
+    const status = (await dialog.locator('[data-testid="run-status"]').innerText()).trim();
     assert(!download, 'produced a file despite the wrong password');
     assert(/รหัสผ่านไม่ถูกต้อง/.test(status), `unhelpful message: ${status}`);
   });
@@ -691,6 +704,95 @@ try {
     await page.mouse.up();
     const dragged = await marker.getAttribute('aria-label');
     assert(/(7[0-9]|8[0-9])% จากซ้าย/.test(dragged), `drag did not land where expected: ${dragged}`);
+  });
+
+
+  /* ── PDF → image: preview, page picking, quality ── */
+  await check('PDF เป็น JPG shows pages and says how many images you will get', async () => {
+    await openTool(page, 'pdf-jpg');
+    const dialog = page.locator('[role="dialog"]');
+    await dialog.locator('input[type="file"]').setInputFiles(join(fixtures, 'thai-4page-with-blanks.pdf'));
+    await dialog.locator('[data-testid="page-thumb"]').nth(3).waitFor({ timeout: 45_000 });
+
+    const outcome = await dialog.locator('[data-testid="export-outcome"]').innerText();
+    assert(/จะได้ 4 ภาพ/.test(outcome), `outcome was: ${outcome}`);
+
+    for (const label of ['ปกติ', 'สูง']) {
+      assert(await dialog.getByText(label, { exact: true }).isVisible(), `missing quality: ${label}`);
+    }
+    await page.keyboard.press('Escape');
+  });
+
+  await check('picking two pages exports exactly those two', async () => {
+    await openTool(page, 'pdf-jpg');
+    const dialog = page.locator('[role="dialog"]');
+    await dialog.locator('input[type="file"]').setInputFiles(join(fixtures, 'thai-4page-with-blanks.pdf'));
+    await dialog.locator('[data-testid="page-thumb"]').nth(3).waitFor({ timeout: 45_000 });
+
+    await dialog.getByRole('button', { name: 'เลือกหน้าเอง' }).click();
+    await dialog.getByRole('button', { name: /^หน้า 1/ }).click();
+    await dialog.getByRole('button', { name: /^หน้า 3/ }).click();
+
+    const outcome = await dialog.locator('[data-testid="export-outcome"]').innerText();
+    assert(/จะได้ 2 ภาพ/.test(outcome), `outcome was: ${outcome}`);
+
+    const downloadPromise = page.waitForEvent('download', { timeout: 90_000 }).catch(() => null);
+    await dialog.getByRole('button', { name: /^เริ่ม/ }).click();
+    const download = await downloadPromise;
+    assert(download, 'no archive produced');
+
+    const JSZip = (await import('jszip')).default;
+    const zip = await JSZip.loadAsync(await readFile(await download.path()));
+    const names = Object.keys(zip.files).filter((n) => n.endsWith('.jpg')).sort();
+    assert(names.length === 2, `expected 2 images, got ${names.length}: ${names}`);
+    assert(names[0].includes('1') && names[1].includes('3'), `wrong pages exported: ${names}`);
+  });
+
+  await check('exporting a single page returns the image itself, not a zip', async () => {
+    await openTool(page, 'pdf-png');
+    const dialog = page.locator('[role="dialog"]');
+    await dialog.locator('input[type="file"]').setInputFiles(join(fixtures, 'thai-1page.pdf'));
+    await dialog.locator('[data-testid="page-thumb"]').first().waitFor({ timeout: 45_000 });
+
+    const downloadPromise = page.waitForEvent('download', { timeout: 60_000 }).catch(() => null);
+    await dialog.getByRole('button', { name: /^เริ่ม/ }).click();
+    const download = await downloadPromise;
+    assert(download, 'nothing produced');
+    const saved = download.suggestedFilename();
+    // The name must be ASCII with a real extension, or the browser drops it
+    // and the user gets a file called "download" that will not open.
+    assert(saved.endsWith('.png'), `got ${saved}`);
+    assert(/^[ -~]+$/.test(saved), `filename is not ascii, browsers discard it: ${saved}`);
+  });
+
+  /* ── the sign preview, which was reported missing ── */
+  await check('เซ็นเอกสาร shows the page preview without scrolling past a huge dropzone', async () => {
+    await openTool(page, 'sign');
+    const dialog = page.locator('[role="dialog"]');
+    await dialog.locator('input[type="file"]').setInputFiles(join(fixtures, 'thai-1page.pdf'));
+
+    const marker = dialog.getByRole('button', { name: /ตำแหน่ง .* จากซ้าย/ });
+    await marker.waitFor({ timeout: 45_000 });
+
+    // Once a file is chosen the dropzone must collapse, otherwise the preview
+    // ends up below the fold — which is exactly why it was reported missing.
+    const dropzone = dialog.getByRole('button', { name: /เปลี่ยนไฟล์|เพิ่มไฟล์/ });
+    const box = await dropzone.boundingBox();
+    assert(box.height < 80, `dropzone is still ${Math.round(box.height)}px tall after choosing a file`);
+    await page.keyboard.press('Escape');
+  });
+
+  await check('the starred row now includes all eight everyday tools', async () => {
+    await page.goto(BASE, { waitUntil: 'domcontentloaded' });
+    const featured = page.locator('#featured-heading').locator('xpath=..').locator('li');
+    await featured.first().waitFor({ timeout: 10_000 });
+    const names = (await featured.locator('span.font-semibold').allTextContents()).map((n) => n.trim());
+    for (const expected of [
+      'รวม PDF', 'แยก PDF', 'จัดเรียงหน้า', 'PDF เป็น JPG',
+      'PDF เป็น PNG', 'JPG เป็น PDF', 'PNG เป็น PDF', 'เซ็นเอกสาร',
+    ]) {
+      assert(names.includes(expected), `missing from the starred row: ${expected} (saw ${names.join(', ')})`);
+    }
   });
 
   await context.close();
