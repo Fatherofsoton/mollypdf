@@ -19,47 +19,165 @@
        problem on the current site.
    ========================================================================== */
 
+/* ==========================================================================
+   Tier 1 — PRIMITIVES
+   --------------------------------------------------------------------------
+   Raw palette. Stated once, never redefined per theme, and never referenced
+   from a component. Dark mode swaps at the SEMANTIC tier below; the primitives
+   underneath it do not move. That is the whole reason this tier exists: before
+   it, every colour was written out three times (light, prefers-dark,
+   [data-theme=dark]) and changing the brand meant editing twelve places.
+
+   Steps run light -> dark by measured relative luminance, so "which is darker"
+   is answerable without opening a colour picker.
+   ========================================================================== */
+:root {
+  /* azure — the brand hue */
+  --p-azure-50:  #eef5fa;
+  --p-azure-100: #e8f2f9;
+  --p-azure-200: #a8d8f0;
+  --p-azure-300: #a5d3ec;
+  --p-azure-400: #8fcbe9;
+  --p-azure-500: #7ab8de;
+  --p-azure-550: #6fb6dd;
+  --p-azure-600: #7fb3d2;
+  --p-azure-700: #3f7fa3;
+  --p-azure-750: #2774a3;
+  --p-azure-800: #0a5f8c;
+  --p-azure-900: #0d3c5f;
+  --p-azure-950: #12303f;
+  --p-azure-980: #0d2c3f;
+
+  /* ink — the navy-tinted neutral used for text, lines and dark surfaces */
+  --p-ink-25:  #f6f8fb;
+  --p-ink-50:  #eef3f8;
+  --p-ink-100: #dbe4ed;
+  --p-ink-200: #c3d2df;
+  --p-ink-300: #a9c2d4;
+  --p-ink-400: #9db1c1;
+  --p-ink-450: #8ba0b1;
+  --p-ink-500: #7d8d9d;
+  --p-ink-550: #6b7f92;
+  --p-ink-600: #5f7183;
+  --p-ink-650: #5a6e80;
+  --p-ink-700: #33485c;
+  --p-ink-800: #1e3444;
+  --p-ink-850: #072742;
+  --p-ink-870: #06253d;
+  --p-ink-880: #10222f;
+  --p-ink-900: #05202f;
+  --p-ink-920: #0d1c27;
+  --p-ink-940: #061722;
+  --p-ink-950: #0a1620;
+
+  /* teal / amber / clay / iris — feedback and category hues */
+  --p-teal-50:  #e6f6f1;
+  --p-teal-400: #59c9ac;
+  --p-teal-600: #168776;
+  --p-teal-700: #0a7a63;
+  --p-teal-950: #10302a;
+
+  --p-amber-50:  #fdf3e2;
+  --p-amber-400: #e0b269;
+  --p-amber-700: #9a6512;
+  --p-amber-950: #2f2617;
+
+  --p-clay-50:  #fdeeec;
+  --p-clay-400: #e88b83;
+  --p-clay-600: #b54f5d;
+  --p-clay-700: #a63d3d;
+  --p-clay-800: #8a3030;
+  --p-clay-950: #33201f;
+
+  --p-iris-400: #a99af0;
+  --p-iris-700: #6857b8;
+
+  --p-white: #ffffff;
+}
+
+
+/* ==========================================================================
+   Tier 2 — SEMANTIC (light)
+   Purpose-named aliases. This is the only tier a component may reference.
+   ========================================================================== */
 :root {
   /* — surfaces — */
-  --surface-page: #f6f8fb;
-  --surface-card: #ffffff;
-  --surface-sunken: #eef3f8;
-  --surface-inverse: #06253d;
-  --surface-inverse-soft: #0d3c5f;
+  --surface-page: var(--p-ink-25);
+  --surface-card: var(--p-white);
+  --surface-sunken: var(--p-ink-50);
+  --surface-inverse: var(--p-ink-870);
+  --surface-inverse-soft: var(--p-azure-900);
 
   /* — text (all values AA against their intended surface) — */
-  --text-strong: #072742;
-  --text-body: #33485c;
-  --text-muted: #5a6e80;
-  --text-subtle: #5f7183;
-  --text-on-inverse: #eef5fa;
-  --text-on-inverse-muted: #a9c2d4;
+  --text-strong: var(--p-ink-850);
+  --text-body: var(--p-ink-700);
+  --text-muted: var(--p-ink-650);
+  --text-subtle: var(--p-ink-600);
+  --text-on-inverse: var(--p-azure-50);
+  --text-on-inverse-muted: var(--p-ink-300);
 
   /* — brand — */
-  --brand: #0a5f8c;
-  --brand-strong: #073f60;
-  --brand-soft: #e8f2f9;
-  --brand-ring: #7fb3d2;
+  --brand: var(--p-azure-800);
+  --brand-strong: var(--p-azure-900);
+  --brand-soft: var(--p-azure-100);
+  --brand-ring: var(--focus-ring); /* was azure-600 = 2.13:1, below WCAG 1.4.11 */
 
   /* — semantic — */
-  --ok: #0a7a63;
-  --ok-soft: #e6f6f1;
-  --warn: #9a6512;
-  --warn-soft: #fdf3e2;
-  --danger: #a63d3d;
-  --danger-soft: #fdeeec;
+  --ok: var(--p-teal-700);
+  --ok-soft: var(--p-teal-50);
+  --warn: var(--p-amber-700);
+  --warn-soft: var(--p-amber-50);
+  --danger: var(--p-clay-700);
+  --danger-soft: var(--p-clay-50);
+
+  /* — action: named by INTENT, not by hue. A destructive button must never
+       borrow the primary token just because the colour happens to fit.
+       These were previously declared only inside the two dark blocks, so in
+       light mode `.btn-primary` resolved to `background: var(--action-bg)`
+       with nothing behind it — every primary button on the site rendered
+       fully transparent. Measured, not guessed: rgba(0,0,0,0). — */
+  --action-bg: var(--p-azure-800);
+  --action-bg-hover: var(--p-azure-900);
+  --action-bg-active: var(--p-ink-870);
+  --action-fg: var(--p-white);
+  --action-destructive: var(--p-clay-700);
+  --action-destructive-hover: var(--p-clay-800);
+  --action-destructive-fg: var(--p-white);
+
+  /* — feedback: four roles per state (bg / text / border / icon) so a status
+       never has to be read from colour alone — WCAG 1.4.1 — */
+  --feedback-success-bg: var(--p-teal-50);
+  --feedback-success-text: var(--p-teal-700);
+  --feedback-success-border: var(--p-teal-600);
+  --feedback-success-icon: var(--p-teal-700);
+  --feedback-warning-bg: var(--p-amber-50);
+  --feedback-warning-text: var(--p-amber-700);
+  --feedback-warning-border: var(--p-amber-400);
+  --feedback-warning-icon: var(--p-amber-700);
+  --feedback-error-bg: var(--p-clay-50);
+  --feedback-error-text: var(--p-clay-700);
+  --feedback-error-border: var(--p-clay-600);
+  --feedback-error-icon: var(--p-clay-700);
+
+  /* — interactive state — */
+  --interactive-selected-bg: var(--p-azure-100);
+  --interactive-selected-border: var(--p-azure-800);
+  --interactive-hover-overlay: rgb(7 39 66 / 0.04);
+  /* 4.13:1 on the page ground. The old --brand-ring (#7fb3d2) measured
+     2.13:1 — below the 3:1 that WCAG 1.4.11 requires of a focus indicator. */
+  --focus-ring: var(--p-azure-700);
 
   /* — category hues, used only by the tool icons — */
-  --c-violet: #6857b8;
-  --c-blue:   #2774a3;
-  --c-green:  #0a7a63;
-  --c-amber:  #9a6512;
-  --c-rose:   #b54f5d;
-  --c-mint:   #168776;
+  --c-violet: var(--p-iris-700);
+  --c-blue: var(--p-azure-750);
+  --c-green: var(--p-teal-700);
+  --c-amber: var(--p-amber-700);
+  --c-rose: var(--p-clay-600);
+  --c-mint: var(--p-teal-600);
 
   /* — lines — */
-  --line: #dbe4ed;
-  --line-strong: #c3d2df;
+  --line: var(--p-ink-100);
+  --line-strong: var(--p-ink-500); /* 3.40:1 on card — was ink-200 at 1.54:1 */
 
   /* — elevation — a single ramp, so nothing invents its own shadow — */
   --shadow-1: 0 1px 2px rgb(7 39 66 / 0.05), 0 1px 3px rgb(7 39 66 / 0.04);
@@ -81,44 +199,67 @@
 
 :root:not([data-theme='light']) {
   @media (prefers-color-scheme: dark) {
-    --surface-page: #0a1620;
-    --surface-card: #10222f;
-    --surface-sunken: #0d1c27;
-    --surface-inverse: #061722;
-    --surface-inverse-soft: #0d2c3f;
+    --surface-page: var(--p-ink-950);
+    --surface-card: var(--p-ink-880);
+    --surface-sunken: var(--p-ink-920);
+    --surface-inverse: var(--p-ink-940);
+    --surface-inverse-soft: var(--p-azure-980);
 
-    --text-strong: #eaf2f8;
-    --text-body: #c2d3e0;
-    --text-muted: #9db1c1;
-    --text-subtle: #8ba0b1;
-    --text-on-inverse: #eaf2f8;
-    --text-on-inverse-muted: #9db1c1;
+    --text-strong: var(--p-ink-50);
+    --text-body: var(--p-ink-200);
+    --text-muted: var(--p-ink-400);
+    --text-subtle: var(--p-ink-450);
+    --text-on-inverse: var(--p-ink-50);
+    --text-on-inverse-muted: var(--p-ink-400);
 
-    --brand: #6fb6dd;
-    --brand-strong: #a5d3ec;
-    --brand-soft: #12303f;
-    --brand-ring: #3f7fa3;
+    --brand: var(--p-azure-550);
+    --brand-strong: var(--p-azure-300);
+    --brand-soft: var(--p-azure-950);
+    --brand-ring: var(--focus-ring);
 
-    --action-bg: #8fcbe9;
-    --action-bg-hover: #a8d8f0;
-    --action-fg: #05202f;
+    --action-bg: var(--p-azure-400);
+    --action-bg-hover: var(--p-azure-200);
+    --action-fg: var(--p-ink-900);
 
-    --ok: #59c9ac;
-    --ok-soft: #10302a;
-    --warn: #e0b269;
-    --warn-soft: #2f2617;
-    --danger: #e88b83;
-    --danger-soft: #33201f;
+    --ok: var(--p-teal-400);
+    --ok-soft: var(--p-teal-950);
+    --warn: var(--p-amber-400);
+    --warn-soft: var(--p-amber-950);
+    --danger: var(--p-clay-400);
+    --danger-soft: var(--p-clay-950);
 
-    --c-violet: #a99af0;
-    --c-blue:   #7ab8de;
-    --c-green:  #59c9ac;
-    --c-amber:  #e0b269;
-    --c-rose:   #ee9a92;
-    --c-mint:   #64ccb8;
+    --action-bg-active: var(--p-azure-300);
+    --action-destructive: var(--p-clay-400);
+    --action-destructive-hover: var(--p-clay-50);
+    --action-destructive-fg: var(--p-ink-900);
 
-    --line: #1e3444;
-    --line-strong: #2c4a5e;
+    --feedback-success-bg: var(--p-teal-950);
+    --feedback-success-text: var(--p-teal-400);
+    --feedback-success-border: var(--p-teal-600);
+    --feedback-success-icon: var(--p-teal-400);
+    --feedback-warning-bg: var(--p-amber-950);
+    --feedback-warning-text: var(--p-amber-400);
+    --feedback-warning-border: var(--p-amber-700);
+    --feedback-warning-icon: var(--p-amber-400);
+    --feedback-error-bg: var(--p-clay-950);
+    --feedback-error-text: var(--p-clay-400);
+    --feedback-error-border: var(--p-clay-600);
+    --feedback-error-icon: var(--p-clay-400);
+
+    --interactive-selected-bg: var(--p-azure-950);
+    --interactive-selected-border: var(--p-azure-550);
+    --interactive-hover-overlay: rgb(255 255 255 / 0.06);
+    --focus-ring: var(--p-azure-550);
+
+    --c-violet: var(--p-iris-400);
+    --c-blue: var(--p-azure-500);
+    --c-green: var(--p-teal-400);
+    --c-amber: var(--p-amber-400);
+    --c-rose: var(--p-clay-400);
+    --c-mint: var(--p-teal-400);
+
+    --line: var(--p-ink-800);
+    --line-strong: var(--p-ink-550); /* 3.93:1 on dark card — was 1.72:1 */
 
     --shadow-1: 0 1px 2px rgb(0 0 0 / 0.4);
     --shadow-2: 0 4px 12px rgb(0 0 0 / 0.45);
@@ -130,44 +271,67 @@
 }
 
 :root[data-theme='dark'] {
-  --surface-page: #0a1620;
-  --surface-card: #10222f;
-  --surface-sunken: #0d1c27;
-  --surface-inverse: #061722;
-  --surface-inverse-soft: #0d2c3f;
+  --surface-page: var(--p-ink-950);
+  --surface-card: var(--p-ink-880);
+  --surface-sunken: var(--p-ink-920);
+  --surface-inverse: var(--p-ink-940);
+  --surface-inverse-soft: var(--p-azure-980);
 
-  --text-strong: #eaf2f8;
-  --text-body: #c2d3e0;
-  --text-muted: #9db1c1;
-  --text-subtle: #8ba0b1;
-  --text-on-inverse: #eaf2f8;
-  --text-on-inverse-muted: #9db1c1;
+  --text-strong: var(--p-ink-50);
+  --text-body: var(--p-ink-200);
+  --text-muted: var(--p-ink-400);
+  --text-subtle: var(--p-ink-450);
+  --text-on-inverse: var(--p-ink-50);
+  --text-on-inverse-muted: var(--p-ink-400);
 
-  --brand: #6fb6dd;
-  --brand-strong: #a5d3ec;
-  --brand-soft: #12303f;
-  --brand-ring: #3f7fa3;
+  --brand: var(--p-azure-550);
+  --brand-strong: var(--p-azure-300);
+  --brand-soft: var(--p-azure-950);
+  --brand-ring: var(--focus-ring);
 
-  --action-bg: #8fcbe9;
-  --action-bg-hover: #a8d8f0;
-  --action-fg: #05202f;
+  --action-bg: var(--p-azure-400);
+  --action-bg-hover: var(--p-azure-200);
+  --action-fg: var(--p-ink-900);
 
-  --ok: #59c9ac;
-  --ok-soft: #10302a;
-  --warn: #e0b269;
-  --warn-soft: #2f2617;
-  --danger: #e88b83;
-  --danger-soft: #33201f;
+  --ok: var(--p-teal-400);
+  --ok-soft: var(--p-teal-950);
+  --warn: var(--p-amber-400);
+  --warn-soft: var(--p-amber-950);
+  --danger: var(--p-clay-400);
+  --danger-soft: var(--p-clay-950);
 
-  --c-violet: #a99af0;
-  --c-blue:   #7ab8de;
-  --c-green:  #59c9ac;
-  --c-amber:  #e0b269;
-  --c-rose:   #ee9a92;
-  --c-mint:   #64ccb8;
+  --action-bg-active: var(--p-azure-300);
+  --action-destructive: var(--p-clay-400);
+  --action-destructive-hover: var(--p-clay-50);
+  --action-destructive-fg: var(--p-ink-900);
 
-  --line: #1e3444;
-  --line-strong: #2c4a5e;
+  --feedback-success-bg: var(--p-teal-950);
+  --feedback-success-text: var(--p-teal-400);
+  --feedback-success-border: var(--p-teal-600);
+  --feedback-success-icon: var(--p-teal-400);
+  --feedback-warning-bg: var(--p-amber-950);
+  --feedback-warning-text: var(--p-amber-400);
+  --feedback-warning-border: var(--p-amber-700);
+  --feedback-warning-icon: var(--p-amber-400);
+  --feedback-error-bg: var(--p-clay-950);
+  --feedback-error-text: var(--p-clay-400);
+  --feedback-error-border: var(--p-clay-600);
+  --feedback-error-icon: var(--p-clay-400);
+
+  --interactive-selected-bg: var(--p-azure-950);
+  --interactive-selected-border: var(--p-azure-550);
+  --interactive-hover-overlay: rgb(255 255 255 / 0.06);
+  --focus-ring: var(--p-azure-550);
+
+  --c-violet: var(--p-iris-400);
+  --c-blue: var(--p-azure-500);
+  --c-green: var(--p-teal-400);
+  --c-amber: var(--p-amber-400);
+  --c-rose: var(--p-clay-400);
+  --c-mint: var(--p-teal-400);
+
+  --line: var(--p-ink-800);
+  --line-strong: var(--p-ink-550);
 
   --shadow-1: 0 1px 2px rgb(0 0 0 / 0.4);
   --shadow-2: 0 4px 12px rgb(0 0 0 / 0.45);
@@ -445,6 +609,7 @@ button:disabled { cursor: not-allowed; }
   transition: transform 0.15s ease, background 0.15s ease;
 }
 .btn-primary:hover:not(:disabled) { background: var(--action-bg-hover); transform: translateY(-1px); }
+.btn-primary:active:not(:disabled) { background: var(--action-bg-active); transform: translateY(0); }
 .btn-primary:disabled { opacity: 0.45; box-shadow: none; }
 
 .chip {

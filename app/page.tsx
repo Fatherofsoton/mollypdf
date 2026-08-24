@@ -666,7 +666,7 @@ export default function Home() {
           // Split shows a page grid and Merge shows cover cards; both need room.
           // Anything with a page preview needs the room: a 640px column makes
           // the preview too small to place a signature accurately.
-          wide={['split', 'merge', 'sign', 'edit', 'watermark', 'header-footer', 'pdf-jpg', 'pdf-png'].includes(
+          wide={['split', 'merge', 'sign', 'organize', 'edit', 'watermark', 'header-footer', 'pdf-jpg', 'pdf-png'].includes(
             selected.id,
           )}
           // Merge renders its own visual cards, so the plain list would be a
@@ -716,6 +716,7 @@ export default function Home() {
 
           {inputLabels[selected.id] &&
             selected.id !== 'sign' &&
+            selected.id !== 'organize' &&
             !['protect', 'unlock'].includes(selected.id) && (
               <div>
                 <label htmlFor="tool-input" className="block text-sm font-semibold text-strong">
