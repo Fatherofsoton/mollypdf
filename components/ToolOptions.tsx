@@ -16,6 +16,7 @@ import { useEffect, useState } from 'react';
 import { Feather, Gauge, Minimize2 } from 'lucide-react';
 import { SplitWorkspace } from './SplitWorkspace';
 import { MergeWorkspace } from './MergeWorkspace';
+import { OrganizeWorkspace } from './OrganizeWorkspace';
 import { PlacementWorkspace } from './PlacementWorkspace';
 import { ImageExportWorkspace } from './ImageExportWorkspace';
 
@@ -162,6 +163,17 @@ export function ToolOptions({
             ? { kind: 'image', dataUrl: options.signatureImage }
             : { kind: 'text', value: text }
         }
+      />
+    );
+  }
+
+  if (toolId === 'organize') {
+    return (
+      <OrganizeWorkspace
+        key={files[0] ? `${files[0].name}-${files[0].size}-${files[0].lastModified}` : 'empty'}
+        file={files[0]}
+        options={options}
+        onChange={onChange}
       />
     );
   }
