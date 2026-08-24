@@ -573,19 +573,35 @@ export async function runTool(toolId: string, input: ToolInput, ctx: RunContext)
           ? parsePages(options.pages?.trim() || '1', doc.getPageCount())
           : doc.getPageIndices();
 
+      // The placement workspace stores position and size normalised to the page
+      // box (0–1), so the same numbers apply to any page size. When it has not
+      // been touched, fall back to the sensible default for each tool.
+      const DEFAULTS: Record<string, { x: number; y: number; size: number }> = {
+        edit: { x: 0.5, y: 0.5, size: 0.5 },
+        watermark: { x: 0.5, y: 0.5, size: 0.6 },
+        'header-footer': { x: 0.5, y: 0.06, size: 0.5 },
+        sign: { x: 0.75, y: 0.9, size: 0.3 },
+      };
+      const fallback = DEFAULTS[toolId];
+      const relX = Number(options.posX ?? fallback.x);
+      const relY = Number(options.posY ?? fallback.y);
+      const relSize = Number(options.size ?? fallback.size);
+
       for (const index of pageIndexes) {
         const page = doc.getPage(index);
-        const targetWidth =
-          toolId === 'sign' ? Math.min(200, page.getWidth() * 0.32) : Math.min(page.getWidth() * 0.6, 380);
-        const size = fitStamp(stamp, targetWidth, page.getHeight() * 0.2);
-        const x =
-          toolId === 'sign' ? page.getWidth() - size.width - 40 : page.getWidth() / 2 - size.width / 2;
-        const y =
-          toolId === 'header-footer'
-            ? page.getHeight() - size.height - 28
-            : toolId === 'sign'
-              ? 48
-              : page.getHeight() / 2 - size.height / 2;
+        const targetWidth = page.getWidth() * Math.min(0.95, Math.max(0.05, relSize));
+        const size = fitStamp(stamp, targetWidth, page.getHeight() * 0.45);
+
+        // The marker is centred on its position in the preview, and the PDF
+        // origin is bottom-left while the preview's is top-left.
+        const x = Math.min(
+          page.getWidth() - size.width,
+          Math.max(0, relX * page.getWidth() - size.width / 2),
+        );
+        const y = Math.min(
+          page.getHeight() - size.height,
+          Math.max(0, (1 - relY) * page.getHeight() - size.height / 2),
+        );
         page.drawImage(embedded, {
           x,
           y,
@@ -672,31 +688,72 @@ export async function runTool(toolId: string, input: ToolInput, ctx: RunContext)
     }
 
     /* ---------------- security ---------------- */
-    case 'protect':
+    case 'protect': {
+      if (!text) throw new Error('กรุณากรอกรหัสผ่าน');
+      if (text.length < 4) throw new Error('รหัสผ่านสั้นเกินไป ควรมีอย่างน้อย 4 ตัวอักษร');
+      const cantoo = await import('@cantoo/pdf-lib');
+      const doc = await cantoo.PDFDocument.load(await files[0].arrayBuffer());
+      doc.encrypt({
+        userPassword: text,
+        ownerPassword: `${text}-mollypdf-owner`,
+        permissions: {
+          printing: 'highResolution',
+          modifying: false,
+          copying: false,
+          annotating: false,
+          fillingForms: true,
+          contentAccessibility: true,
+          documentAssembly: false,
+        },
+      });
+      return deliver(
+        toPdfBlob(await doc.save()),
+        `${name}-ล็อกแล้ว.pdf`,
+        doc.getPageCount(),
+        'เก็บรหัสผ่านไว้ให้ดี — ถ้าลืมแล้วจะเปิดไฟล์ไม่ได้อีกเลย',
+      );
+    }
+
     case 'unlock': {
       if (!text) throw new Error('กรุณากรอกรหัสผ่าน');
       const cantoo = await import('@cantoo/pdf-lib');
-      const doc = await cantoo.PDFDocument.load(
-        await files[0].arrayBuffer(),
-        toolId === 'unlock' ? { password: text } : undefined,
-      );
-      if (toolId === 'protect') {
-        doc.encrypt({
-          userPassword: text,
-          ownerPassword: `${text}-mollypdf-owner`,
-          permissions: {
-            printing: 'highResolution',
-            modifying: false,
-            copying: false,
-            annotating: false,
-            fillingForms: true,
-            contentAccessibility: true,
-            documentAssembly: false,
-          },
-        });
+
+      let source: import('@cantoo/pdf-lib').PDFDocument;
+      try {
+        source = await cantoo.PDFDocument.load(await files[0].arrayBuffer(), { password: text });
+      } catch (error) {
+        const message = String((error as Error)?.message ?? '');
+        if (/password/i.test(message)) {
+          throw new Error(
+            'รหัสผ่านไม่ถูกต้อง — ลองกดไอคอนรูปตาเพื่อดูรหัสที่พิมพ์ ' +
+              'และตรวจว่าไม่ได้เปิด Caps Lock หรือสลับภาษาแป้นพิมพ์อยู่',
+          );
+        }
+        throw new Error('เปิดไฟล์นี้ไม่ได้ ไฟล์อาจเสียหายหรือใช้การเข้ารหัสที่ยังไม่รองรับ');
       }
-      const blob = toPdfBlob(await doc.save());
-      return deliver(blob, `${name}-${toolId === 'protect' ? 'ล็อกแล้ว' : 'ปลดล็อกแล้ว'}.pdf`, doc.getPageCount());
+
+      // FIX: the original loaded the document with the password and saved it
+      // straight back — which keeps the /Encrypt dictionary, so the "unlocked"
+      // file still asked for a password. Copying every page into a brand-new
+      // document is what actually drops the encryption. Both sides must be the
+      // same library; mixing pdf-lib and @cantoo/pdf-lib fails at copyPages.
+      const out = await cantoo.PDFDocument.create();
+      const copied = await out.copyPages(source, source.getPageIndices());
+      copied.forEach((page) => out.addPage(page));
+
+      const bytes = await out.save();
+      // Verify rather than assume: this tool has already shipped once claiming
+      // success while doing nothing.
+      if (out.isEncrypted) {
+        throw new Error('ถอดการเข้ารหัสไม่สำเร็จ ไฟล์นี้อาจใช้การป้องกันแบบที่ยังไม่รองรับ');
+      }
+
+      return deliver(
+        toPdfBlob(bytes),
+        `${name}-ปลดล็อกแล้ว.pdf`,
+        out.getPageCount(),
+        'ไฟล์นี้เปิดได้โดยไม่ต้องใส่รหัสผ่านแล้ว',
+      );
     }
 
     case 'redact': {

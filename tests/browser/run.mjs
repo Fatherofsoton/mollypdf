@@ -28,6 +28,7 @@ const fixtures = join(root, 'tests', 'fixtures');
 const PORT = 3123;
 const BASE = `http://127.0.0.1:${PORT}`;
 
+const downloadDir = join(root, 'tests', '.tmp');
 const results = [];
 let failures = 0;
 
@@ -74,7 +75,10 @@ async function runToolWith(page, toolId, { file, text } = {}) {
     await page.waitForTimeout(200);
   }
   if (text !== undefined) {
-    await dialog.locator('#tool-input').fill(text);
+    // protect/unlock render PasswordField, which generates its own id.
+    const generic = dialog.locator('#tool-input');
+    const field = (await generic.count()) ? generic : dialog.locator('input[type="password"]').first();
+    await field.fill(text);
   }
   const downloadPromise = page
     .waitForEvent('download', { timeout: 60_000 })
@@ -123,6 +127,10 @@ async function ensurePortFree() {
     `port ${PORT} is still in use. Stop the stray "next start -p ${PORT}" process and re-run.`,
   );
 }
+
+const { mkdir, rm } = await import('node:fs/promises');
+await rm(downloadDir, { recursive: true, force: true });
+await mkdir(downloadDir, { recursive: true });
 
 await ensurePortFree();
 
@@ -536,6 +544,153 @@ try {
     assert(await page.getByText('แปลงจาก PDF', { exact: true }).isVisible(), 'missing from-PDF column');
     await page.keyboard.press('Escape');
     assert(await trigger.getAttribute('aria-expanded') === 'false', 'Escape did not close the menu');
+  });
+
+
+  /* ── the four tools reported broken ──────────────────────────────────────
+     They failed together with "undefined is not a function", and what they
+     share is pdf.js — merge, the one that kept working, is the only one that
+     never touches it. These run each of them end to end so a pdf.js loading
+     failure can never again pass review. */
+  for (const [toolId, label, fixture] of [
+    ['pdf-word', 'PDF เป็น Word', 'thai-segmented.pdf'],
+    ['word-count', 'นับคำใน PDF', 'thai-segmented.pdf'],
+    ['compress', 'บีบอัด PDF', 'thai-4page-with-blanks.pdf'],
+  ]) {
+    await check(`${label} produces a file (pdf.js loads)`, async () => {
+      const { download, status } = await runToolWith(page, toolId, { file: fixture });
+      assert(download, `no file produced. status: ${status}`);
+      assert(
+        !/undefined is not a function|is not a function|เปิดตัวอ่าน PDF ไม่สำเร็จ/.test(status),
+        `pdf.js failed to load: ${status}`,
+      );
+      const bytes = await readFile(await download.path());
+      assert(bytes.length > 0, 'produced an empty file');
+    });
+  }
+
+  await check('เปรียบเทียบ PDF works across two files', async () => {
+    await openTool(page, 'compare');
+    const dialog = page.locator('[role="dialog"]');
+    await dialog.locator('input[type="file"]').setInputFiles([
+      join(fixtures, 'thai-1page.pdf'),
+      join(fixtures, 'thai-segmented.pdf'),
+    ]);
+    const downloadPromise = page.waitForEvent('download', { timeout: 90_000 }).catch(() => null);
+    await dialog.getByRole('button', { name: /^เริ่ม/ }).click();
+    const download = await downloadPromise;
+    const status = (await dialog.locator('[role="status"]').first().innerText()).trim();
+    assert(download, `no comparison produced. status: ${status}`);
+    assert(!/is not a function/.test(status), `pdf.js failed: ${status}`);
+  });
+
+  /* ── password ── */
+  await check('the password field can reveal what was typed', async () => {
+    await openTool(page, 'protect');
+    const dialog = page.locator('[role="dialog"]');
+    const field = dialog.locator('input[type="password"], input[type="text"]').first();
+    await field.fill('ทดสอบ1234');
+    assert(await field.getAttribute('type') === 'password', 'should start masked');
+
+    await dialog.getByRole('button', { name: 'แสดงรหัสผ่าน' }).click();
+    assert(await field.getAttribute('type') === 'text', 'reveal did not unmask the field');
+    assert(await field.inputValue() === 'ทดสอบ1234', 'value changed when revealed');
+
+    await dialog.getByRole('button', { name: 'ซ่อนรหัสผ่าน' }).click();
+    assert(await field.getAttribute('type') === 'password', 'hide did not re-mask the field');
+    await page.keyboard.press('Escape');
+  });
+
+  await check('protect then unlock returns a file that needs no password', async () => {
+    // Lock it.
+    const locked = await runToolWith(page, 'protect', {
+      file: 'thai-1page.pdf',
+      text: 'ทดสอบ1234',
+    });
+    assert(locked.download, `protect produced nothing. status: ${locked.status}`);
+    const lockedPath = join(downloadDir, 'locked.pdf');
+    await locked.download.saveAs(lockedPath);
+
+    const lockedBytes = await readFile(lockedPath);
+    assert(lockedBytes.includes(Buffer.from('/Encrypt')), 'protect did not actually encrypt');
+
+    // Unlock it, through the real UI, with the file it just produced.
+    await openTool(page, 'unlock');
+    const dialog = page.locator('[role="dialog"]');
+    await dialog.locator('input[type="file"]').setInputFiles(lockedPath);
+    await dialog.locator('input[type="password"]').fill('ทดสอบ1234');
+    const downloadPromise = page.waitForEvent('download', { timeout: 60_000 }).catch(() => null);
+    await dialog.getByRole('button', { name: /^เริ่ม/ }).click();
+    const download = await downloadPromise;
+    const status = (await dialog.locator('[role="status"]').first().innerText()).trim();
+    assert(download, `unlock produced nothing. status: ${status}`);
+
+    const out = await readFile(await download.path());
+    assert(
+      !out.includes(Buffer.from('/Encrypt')),
+      'the "unlocked" file is still encrypted — this is the original bug',
+    );
+
+    // The real proof: pdf-lib opens it with no password.
+    const lib = await import('pdf-lib');
+    const reopened = await lib.PDFDocument.load(new Uint8Array(out));
+    assert(reopened.getPageCount() === 1, 'unlocked file lost its pages');
+  });
+
+  await check('unlock reports a wrong password clearly instead of failing silently', async () => {
+    const locked = await runToolWith(page, 'protect', { file: 'thai-1page.pdf', text: 'ทดสอบ1234' });
+    const lockedPath = join(downloadDir, 'locked2.pdf');
+    await locked.download.saveAs(lockedPath);
+
+    await openTool(page, 'unlock');
+    const dialog = page.locator('[role="dialog"]');
+    await dialog.locator('input[type="file"]').setInputFiles(lockedPath);
+    await dialog.locator('input[type="password"]').fill('ผิดแน่นอน');
+    const downloadPromise = page.waitForEvent('download', { timeout: 20_000 }).catch(() => null);
+    await dialog.getByRole('button', { name: /^เริ่ม/ }).click();
+    const download = await downloadPromise;
+    const status = (await dialog.locator('[role="status"]').first().innerText()).trim();
+    assert(!download, 'produced a file despite the wrong password');
+    assert(/รหัสผ่านไม่ถูกต้อง/.test(status), `unhelpful message: ${status}`);
+  });
+
+  /* ── featured tools ── */
+  await check('the four popular tools are starred and listed first', async () => {
+    await page.goto(BASE, { waitUntil: 'domcontentloaded' });
+    const featured = page.locator('#featured-heading').locator('xpath=..').locator('li');
+    await featured.first().waitFor({ timeout: 10_000 });
+    const names = await featured.locator('span.font-semibold').allTextContents();
+    for (const expected of ['รวม PDF', 'แยก PDF', 'PDF เป็น JPG', 'PDF เป็น PNG']) {
+      assert(names.some((n) => n.trim() === expected), `missing from the starred row: ${expected}`);
+    }
+  });
+
+  /* ── drag to place ── */
+  await check('a stamp can be dragged to a new position and the PDF follows', async () => {
+    await openTool(page, 'watermark');
+    const dialog = page.locator('[role="dialog"]');
+    await dialog.locator('input[type="file"]').setInputFiles(join(fixtures, 'thai-1page.pdf'));
+
+    const marker = dialog.getByRole('button', { name: /ตำแหน่ง .* จากซ้าย/ });
+    await marker.waitFor({ timeout: 45_000 });
+    const before = await marker.getAttribute('aria-label');
+
+    // Keyboard nudge — the same code path a drag uses, and deterministic.
+    await marker.focus();
+    for (let i = 0; i < 3; i++) await page.keyboard.press('Shift+ArrowLeft');
+    const after = await marker.getAttribute('aria-label');
+    assert(before !== after, `position did not change: ${before}`);
+    assert(/10% จากซ้าย|20% จากซ้าย/.test(after), `unexpected position: ${after}`);
+
+    // And a real pointer drag moves it too.
+    const stage = await dialog.locator('img[alt^="ตัวอย่างหน้า"]').boundingBox();
+    const handle = await marker.boundingBox();
+    await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(stage.x + stage.width * 0.8, stage.y + stage.height * 0.25, { steps: 8 });
+    await page.mouse.up();
+    const dragged = await marker.getAttribute('aria-label');
+    assert(/(7[0-9]|8[0-9])% จากซ้าย/.test(dragged), `drag did not land where expected: ${dragged}`);
   });
 
   await context.close();

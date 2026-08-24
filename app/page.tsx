@@ -23,16 +23,17 @@
  */
 
 import {
-  ArrowRight, BarChart3, Check, Heart, Menu, Moon, Search, ShieldCheck, Sun, Upload, X, Zap,
+  ArrowRight, BarChart3, Check, Heart, Menu, Moon, Search, ShieldCheck, Star, Sun, Upload, X, Zap,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { categories, readyTools, toolById, tools, type Tool } from '../lib/tools/registry';
+import { categories, featuredTools, readyTools, toolById, tools, type Tool } from '../lib/tools/registry';
 import { runTool, extractForSpeech, type ToolInput } from '../lib/tools/run';
 import { CancelledError, type Progress } from '../lib/runtime';
 import { ToolDialog, type RunState } from '../components/ToolDialog';
 import { ToolOptions } from '../components/ToolOptions';
 import { ToolNav } from '../components/ToolNav';
+import { PasswordField } from '../components/PasswordField';
 import { SignaturePad, type SignatureValue } from '../components/SignaturePad';
 import { ReadAloud } from '../components/ReadAloud';
 
@@ -397,6 +398,42 @@ export default function Home() {
               </div>
             </div>
 
+            {/* The four jobs that bring most people here. Putting them above
+                the 42-card grid saves the scan for the common case; the star
+                repeats on the card below so the two views agree. */}
+            <section className="mt-8" aria-labelledby="featured-heading">
+              <h3
+                id="featured-heading"
+                className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.08em] text-muted"
+              >
+                <Star size={13} aria-hidden="true" className="fill-[color:var(--warn)] text-[color:var(--warn)]" />
+                ใช้บ่อยที่สุด
+              </h3>
+              <ul className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                {featuredTools.map((tool) => (
+                  <li key={tool.id}>
+                    <Link
+                      href={`/tools/${tool.id}`}
+                      onClick={(event) => {
+                        if (event.metaKey || event.ctrlKey || event.shiftKey) return;
+                        event.preventDefault();
+                        openTool(tool);
+                      }}
+                      className="tool-card flex h-full items-center gap-3 p-4"
+                    >
+                      <span className={`tool-icon tool-${tool.color} shrink-0`} aria-hidden="true">
+                        <tool.icon size={19} />
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm font-semibold text-strong">{tool.title}</span>
+                        <span className="mt-0.5 block truncate text-xs text-muted">{tool.description}</span>
+                      </span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </section>
+
             <div className="hide-scrollbar mt-8 flex gap-2 overflow-x-auto pb-2" role="tablist" aria-label="หมวดเครื่องมือ">
               {categories.map((category) => (
                 <button
@@ -444,7 +481,17 @@ export default function Home() {
                     <span className={`tool-icon tool-${tool.color}`} aria-hidden="true">
                       <tool.icon size={20} />
                     </span>
-                    <h3 className="mt-5">{tool.title}</h3>
+                    <h3 className="mt-5 flex items-center gap-1.5">
+                      {tool.featured && (
+                        <Star
+                          size={14}
+                          aria-hidden="true"
+                          className="shrink-0 fill-[color:var(--warn)] text-[color:var(--warn)]"
+                        />
+                      )}
+                      {tool.title}
+                      {tool.featured && <span className="sr-only">(เครื่องมือยอดนิยม)</span>}
+                    </h3>
                     <p className="mt-1.5 pr-4">{tool.description}</p>
                   </Link>
                 </li>
@@ -654,38 +701,74 @@ export default function Home() {
           message={message}
           progress={progress}
         >
-          {inputLabels[selected.id] && selected.id !== 'sign' && (
-            <div>
-              <label htmlFor="tool-input" className="block text-sm font-semibold text-strong">
-                {inputLabels[selected.id]}
-              </label>
-              {FILELESS.has(selected.id) ? (
-                <textarea
-                  id="tool-input"
-                  value={toolText}
-                  onChange={(event) => setToolText(event.target.value)}
-                  rows={7}
-                  placeholder={selected.id === 'html-pdf' ? '<h1>หัวข้อ</h1><p>เนื้อหา</p>' : 'พิมพ์หรือวางข้อความที่นี่'}
-                  className="mt-2 w-full rounded-xl border border-line bg-card px-3 py-3 text-body outline-none focus:border-[color:var(--brand-ring)]"
-                />
-              ) : (
-                <input
-                  id="tool-input"
-                  type={['protect', 'unlock'].includes(selected.id) ? 'password' : 'text'}
-                  autoComplete={['protect', 'unlock'].includes(selected.id) ? 'new-password' : 'off'}
-                  value={toolText}
-                  onChange={(event) => setToolText(event.target.value)}
-                  placeholder={
-                    ['organize', 'remove-pages', 'extract-pages'].includes(selected.id) ? 'เช่น 1, 3-5, 2' : 'พิมพ์ที่นี่'
-                  }
-                  className="mt-2 h-11 w-full rounded-xl border border-line bg-card px-3 text-body outline-none focus:border-[color:var(--brand-ring)]"
-                />
-              )}
-            </div>
+          {['protect', 'unlock'].includes(selected.id) && (
+            <PasswordField
+              label={inputLabels[selected.id]}
+              value={toolText}
+              onChange={setToolText}
+              mode={selected.id === 'protect' ? 'new' : 'existing'}
+            />
           )}
 
+          {inputLabels[selected.id] &&
+            selected.id !== 'sign' &&
+            !['protect', 'unlock'].includes(selected.id) && (
+              <div>
+                <label htmlFor="tool-input" className="block text-sm font-semibold text-strong">
+                  {inputLabels[selected.id]}
+                </label>
+                {FILELESS.has(selected.id) ? (
+                  <textarea
+                    id="tool-input"
+                    value={toolText}
+                    onChange={(event) => setToolText(event.target.value)}
+                    rows={7}
+                    placeholder={
+                      selected.id === 'html-pdf' ? '<h1>หัวข้อ</h1><p>เนื้อหา</p>' : 'พิมพ์หรือวางข้อความที่นี่'
+                    }
+                    className="mt-2 w-full rounded-xl border border-line bg-card px-3 py-3 text-body outline-none focus:border-[color:var(--brand-ring)]"
+                  />
+                ) : (
+                  <input
+                    id="tool-input"
+                    type="text"
+                    autoComplete="off"
+                    value={toolText}
+                    onChange={(event) => setToolText(event.target.value)}
+                    placeholder={
+                      ['organize', 'remove-pages', 'extract-pages'].includes(selected.id)
+                        ? 'เช่น 1, 3-5, 2'
+                        : 'พิมพ์ที่นี่'
+                    }
+                    className="mt-2 h-11 w-full rounded-xl border border-line bg-card px-3 text-body outline-none focus:border-[color:var(--brand-ring)]"
+                  />
+                )}
+              </div>
+            )}
+
           {selected.id === 'sign' && (
-            <SignaturePad typed={toolText} onTypedChange={setToolText} onDrawnChange={setSignature} />
+            <SignaturePad
+              typed={toolText}
+              onTypedChange={setToolText}
+              onDrawnChange={(value) => {
+                setSignature(value);
+                // Mirror it into the options so the drag-to-place preview shows
+                // the real signature rather than a placeholder.
+                setToolOptions((current) => {
+                  const next = { ...current };
+                  if (value) {
+                    next.signatureImage = value.dataUrl;
+                    next.signatureWidth = String(value.width);
+                    next.signatureHeight = String(value.height);
+                  } else {
+                    delete next.signatureImage;
+                    delete next.signatureWidth;
+                    delete next.signatureHeight;
+                  }
+                  return next;
+                });
+              }}
+            />
           )}
 
           {selected.id === 'read-aloud' && files.length > 0 && (
@@ -710,6 +793,7 @@ export default function Home() {
             onChange={setToolOptions}
             onFilesChange={setFiles}
             onAddFiles={() => openPickerRef.current?.()}
+            text={toolText}
           />
 
           {selected.id === 'ocr' && (

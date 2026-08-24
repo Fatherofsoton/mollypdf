@@ -11,7 +11,31 @@
 import './map-upsert';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 
-let pdfjsPromise: Promise<typeof import('pdfjs-dist')> | null = null;
+/**
+ * We load the **legacy** build, not the default one.
+ *
+ * pdfjs-dist 6.2's default bundle touches the global `Iterator` object at
+ * module scope:
+ *
+ *     "function" != typeof Iterator.prototype.join && (Iterator.prototype.join = …)
+ *
+ * `Iterator` is part of the iterator-helpers proposal and only shipped in
+ * Safari 18.4 (March 2025). On any older Safari — which is every iPhone that
+ * has not been updated — that line throws while the module is still being
+ * evaluated, so the import itself rejects and **every** tool that touches
+ * pdf.js dies with a raw engine error like
+ * "undefined is not a function". Merge and the other pure pdf-lib tools keep
+ * working, which is exactly the pattern that was reported.
+ *
+ * The legacy build is transpiled for older engines. Verified in
+ * `tests/pdfjs-compat.test.ts`, which deletes `Iterator`,
+ * `Promise.withResolvers` and `Map.prototype.getOrInsertComputed` and asserts
+ * text extraction still works: the default build fails all three, the legacy
+ * build passes all three.
+ */
+type PdfJsModule = typeof import('pdfjs-dist');
+
+let pdfjsPromise: Promise<PdfJsModule> | null = null;
 
 /**
  * The worker is served from our own origin at `/pdfjs/worker.mjs` — a shim that
@@ -26,10 +50,21 @@ export const PDF_WORKER_URL = '/pdfjs/worker.mjs';
 
 export function getPdfJs() {
   if (!pdfjsPromise) {
-    pdfjsPromise = import('pdfjs-dist').then((pdfjs) => {
-      pdfjs.GlobalWorkerOptions.workerSrc = PDF_WORKER_URL;
-      return pdfjs;
-    });
+    pdfjsPromise = (import('pdfjs-dist/legacy/build/pdf.mjs') as Promise<PdfJsModule>)
+      .then((pdfjs) => {
+        pdfjs.GlobalWorkerOptions.workerSrc = PDF_WORKER_URL;
+        return pdfjs;
+      })
+      .catch((error: unknown) => {
+        // Never surface a raw engine message like "undefined is not a
+        // function" — it tells the user nothing they can act on.
+        pdfjsPromise = null;
+        console.error('[pdfjs] failed to load', error);
+        throw new Error(
+          'เบราว์เซอร์นี้เปิดตัวอ่าน PDF ไม่สำเร็จ กรุณาอัปเดตเบราว์เซอร์ ' +
+            'หรือลองใช้ Chrome / Safari รุ่นล่าสุด',
+        );
+      });
   }
   return pdfjsPromise;
 }

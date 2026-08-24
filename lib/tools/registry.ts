@@ -31,6 +31,12 @@ export type Tool = {
   multiple?: boolean;
   status: 'ready' | 'preview' | 'unavailable';
   badge?: string;
+  /**
+   * Shown first, with a star. Reserved for the handful of jobs that bring
+   * people to a PDF site in the first place — if everything is starred,
+   * nothing is.
+   */
+  featured?: boolean;
   /** Extra Thai search terms people actually type. */
   keywords: string[];
 };
@@ -58,10 +64,10 @@ export const tools: Tool[] = [
   // ── จัดหน้า ────────────────────────────────────────────────────────────
   t('merge', 'รวม PDF', 'เรียงหลายไฟล์เป็นเอกสารเดียว',
     'เลือกไฟล์ PDF กี่ไฟล์ก็ได้ จัดลำดับตามต้องการ แล้วรวมเป็นเล่มเดียว โครงสร้างข้อความและคุณภาพหน้าเดิมถูกคัดลอกมาทั้งหมด ไม่มีการแปลงเป็นภาพ',
-    'จัดหน้า', Files, 'navy', ['รวมไฟล์ pdf', 'merge pdf', 'ต่อไฟล์ pdf'], { multiple: true, badge: 'นิยม' }),
+    'จัดหน้า', Files, 'navy', ['รวมไฟล์ pdf', 'merge pdf', 'ต่อไฟล์ pdf'], { multiple: true, badge: 'นิยม', featured: true }),
   t('split', 'แยก PDF', 'ตัดตามช่วง แยกรายหน้า หรือแบ่งตามขนาด',
     'เห็นทุกหน้าเป็นภาพย่อแล้วเลือกได้โดยตรง ตัดเป็นช่วงตามที่กำหนด แยกทีละหน้า หรือแบ่งเป็นก้อนที่ไม่เกินขนาดที่ตั้งไว้ ระบบบอกล่วงหน้าว่าจะได้กี่ไฟล์ก่อนเริ่มทำงาน',
-    'จัดหน้า', FilePenLine, 'violet', ['แยกไฟล์ pdf', 'split pdf', 'ตัดหน้า pdf']),
+    'จัดหน้า', FilePenLine, 'violet', ['แยกไฟล์ pdf', 'split pdf', 'ตัดหน้า pdf'], { featured: true }),
   t('organize', 'จัดเรียงหน้า', 'กำหนดลำดับหน้าใหม่ได้เอง',
     'พิมพ์ลำดับหน้าที่ต้องการ เช่น 3, 1, 2 หรือ 5-1 เพื่อสลับ ย้าย หรือทำซ้ำหน้า ระบบจะประกอบเล่มใหม่ตามลำดับนั้นพอดี',
     'จัดหน้า', Grid3X3, 'blue', ['สลับหน้า pdf', 'จัดลำดับหน้า', 'organize pdf']),
@@ -111,10 +117,10 @@ export const tools: Tool[] = [
     'แปลงไฟล์', FileText, 'green', ['pdf เป็น excel', 'pdf to xlsx']),
   t('pdf-jpg', 'PDF เป็น JPG', 'แปลงทุกหน้าเป็นภาพในไฟล์ ZIP',
     'เรนเดอร์ทุกหน้าเป็นภาพ JPG คุณภาพสูง แล้วรวมเป็น ZIP ไฟล์เดียว',
-    'แปลงไฟล์', FileImage, 'amber', ['pdf เป็นรูป', 'pdf to jpg']),
+    'แปลงไฟล์', FileImage, 'amber', ['pdf เป็นรูป', 'pdf to jpg'], { featured: true }),
   t('pdf-png', 'PDF เป็น PNG', 'เก็บทุกหน้าเป็นภาพคมชัด',
     'เหมือน PDF เป็น JPG แต่ได้ภาพแบบไม่สูญเสียคุณภาพ เหมาะกับงานกราฟิกหรือเอกสารที่มีเส้นบาง',
-    'แปลงไฟล์', FileImage, 'violet', ['pdf เป็น png', 'pdf to png']),
+    'แปลงไฟล์', FileImage, 'violet', ['pdf เป็น png', 'pdf to png'], { featured: true }),
   t('pdf-text', 'PDF เป็นข้อความ', 'ดึงข้อความเป็นไฟล์ TXT',
     'ได้ข้อความล้วนพร้อมขึ้นบรรทัดตามต้นฉบับ ใช้ตัวตัดคำที่เข้าใจภาษาไทย',
     'แปลงไฟล์', FileText, 'slate', ['pdf เป็น text', 'ดึงข้อความจาก pdf']),
@@ -199,6 +205,9 @@ export const tools: Tool[] = [
 ];
 
 export const readyTools = tools.filter((tool) => tool.status === 'ready');
+
+/** The starred shortcuts, in the order they should appear. */
+export const featuredTools = readyTools.filter((tool) => tool.featured);
 export const toolById = new Map(tools.map((tool) => [tool.id, tool]));
 export const allowedToolIds = new Set(readyTools.map((tool) => tool.id));
 

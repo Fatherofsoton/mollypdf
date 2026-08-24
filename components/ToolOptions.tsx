@@ -16,6 +16,7 @@ import { useEffect, useState } from 'react';
 import { Feather, Gauge, Minimize2 } from 'lucide-react';
 import { SplitWorkspace } from './SplitWorkspace';
 import { MergeWorkspace } from './MergeWorkspace';
+import { PlacementWorkspace } from './PlacementWorkspace';
 
 export type OptionsProps = {
   toolId: string;
@@ -26,6 +27,16 @@ export type OptionsProps = {
   onFilesChange?: (files: File[]) => void;
   /** Opens the file picker again so more files can be appended. */
   onAddFiles?: () => void;
+  /** The text typed into the tool's own field, for the placement preview. */
+  text?: string;
+};
+
+/** Tools whose whole job is putting something at a particular spot on a page. */
+const PLACEMENT: Record<string, { scope: 'single' | 'all'; x: number; y: number; size: number }> = {
+  edit: { scope: 'single', x: 0.5, y: 0.5, size: 0.5 },
+  sign: { scope: 'single', x: 0.75, y: 0.9, size: 0.3 },
+  watermark: { scope: 'all', x: 0.5, y: 0.5, size: 0.6 },
+  'header-footer': { scope: 'all', x: 0.5, y: 0.06, size: 0.5 },
 };
 
 /**
@@ -131,8 +142,28 @@ export function ToolOptions({
   onChange,
   onFilesChange,
   onAddFiles,
+  text = '',
 }: OptionsProps) {
   const set = (key: string, value: string) => onChange({ ...options, [key]: value });
+
+  const placement = PLACEMENT[toolId];
+  if (placement) {
+    return (
+      <PlacementWorkspace
+        key={files[0] ? `${files[0].name}-${files[0].size}-${files[0].lastModified}` : 'empty'}
+        file={files[0]}
+        options={options}
+        onChange={onChange}
+        scope={placement.scope}
+        defaults={{ x: placement.x, y: placement.y, size: placement.size }}
+        preview={
+          options.signatureImage
+            ? { kind: 'image', dataUrl: options.signatureImage }
+            : { kind: 'text', value: text }
+        }
+      />
+    );
+  }
 
   switch (toolId) {
     case 'split':
