@@ -141,11 +141,11 @@ export function ToolDialog({
         aria-describedby={descriptionId}
         tabIndex={-1}
         onKeyDown={onKeyDown}
-        className={`max-h-[92vh] w-full overflow-auto rounded-t-[28px] bg-card shadow-[var(--shadow-4)] outline-none sm:rounded-[28px] ${
+        className={`max-h-[92vh] w-full overflow-auto rounded-t-[28px] bg-[color:var(--surface-raised)] shadow-[var(--shadow-4)] outline-none sm:rounded-[28px] ${
           wide ? 'max-w-[1040px]' : 'max-w-[640px]'
         }`}
       >
-        <header className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-line bg-card px-5 py-4 sm:px-7">
+        <header className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-line bg-[color:var(--surface-raised)] px-5 py-4 sm:px-7">
           <div className="flex min-w-0 items-center gap-3">
             <span className={`tool-icon tool-${tool.color} shrink-0`} aria-hidden="true">
               <tool.icon size={20} />
