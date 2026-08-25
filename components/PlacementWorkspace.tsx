@@ -20,7 +20,7 @@
  */
 
 import { Move } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { renderThumbnails, type Thumbnail } from '../lib/pdf/thumbnails';
 
 export type PlacementWorkspaceProps = {
@@ -48,6 +48,8 @@ export function PlacementWorkspace({
   const [loading, setLoading] = useState(Boolean(file));
   const [dragging, setDragging] = useState(false);
   const stageRef = useRef<HTMLDivElement>(null);
+  const labelRef = useRef<HTMLSpanElement>(null);
+  const [labelScale, setLabelScale] = useState(1);
 
   const pageIndex = Math.max(0, Number(options.previewPage ?? '1') - 1);
   const x = Number(options.posX ?? defaults?.x ?? 0.5);
@@ -79,6 +81,20 @@ export function PlacementWorkspace({
   }, [file]);
 
   const page = pages[pageIndex] ?? pages[0];
+
+  /**
+   * The stamp that lands on the page is scaled to the width you chose, so the
+   * marker has to do the same or it lies. Truncating the label made a page
+   * number read "หน้า 1 จ…" in the preview and print in full on the page.
+   */
+  useLayoutEffect(() => {
+    const label = labelRef.current;
+    if (!label) return;
+    const available = label.parentElement?.clientWidth ?? 0;
+    const natural = label.scrollWidth;
+    // A hair under the box so the last glyph never loses a pixel to rounding.
+    setLabelScale(natural > 0 && available > 0 ? Math.min(1, (available * 0.96) / natural) : 1);
+  }, [preview, size, page]);
 
   const moveTo = useCallback(
     (clientX: number, clientY: number) => {
@@ -192,7 +208,15 @@ export function PlacementWorkspace({
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={preview.dataUrl} alt="" className="w-full" />
               ) : (
-                <span className="block truncate">{preview?.value?.trim() || 'ข้อความ'}</span>
+                <span className="block overflow-hidden">
+                  <span
+                    ref={labelRef}
+                    className="inline-block whitespace-nowrap"
+                    style={{ transform: `scale(${labelScale})`, transformOrigin: 'center' }}
+                  >
+                    {preview?.value?.trim() || 'ข้อความ'}
+                  </span>
+                </span>
               )}
             </button>
           </div>

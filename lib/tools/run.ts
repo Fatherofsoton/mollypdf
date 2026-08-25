@@ -24,7 +24,7 @@ import { fitStamp, makeStamp, type Stamp } from '../pdf/stamp';
 import { drawRedactions, findRedactionBoxes, NoRedactionMatchError } from '../pdf/redact';
 import { compressPdf, greyscalePdf, removeBlankPages } from '../pdf/optimise';
 import { htmlToText } from '../html-text';
-import { saveBlob, SAVE_MESSAGE, type SaveOutcome } from '../download';
+
 
 export type ToolInput = {
   files: File[];
@@ -35,7 +35,9 @@ export type ToolInput = {
 };
 
 export type ToolResult = {
-  outcome: SaveOutcome;
+  /** The finished file, held in memory until the user asks to save it. */
+  blob: Blob;
+  filename: string;
   message: string;
   /** Reported to /api/stats — never file contents. */
   pages: number;
@@ -55,14 +57,49 @@ async function loadPdfLib(file: File) {
   return PDFDocument.load(await file.arrayBuffer(), { ignoreEncryption: false });
 }
 
-async function deliver(blob: Blob, filename: string, pages: number, note?: string): Promise<ToolResult> {
-  const outcome = await saveBlob(blob, filename);
+/**
+ * Hand the finished file back — do NOT save it here.
+ *
+ * This used to call `saveBlob` directly, which meant the download started from
+ * a promise continuation minutes after the click that began the job. Safari
+ * treats that as not-a-user-gesture: the Web Share sheet and `window.open` are
+ * both refused, silently, and on iOS the tool appeared to succeed while no file
+ * ever arrived. Returning the blob lets the UI put a real button in front of
+ * the user, and the save then happens inside that button's own click.
+ */
+function deliver(blob: Blob, filename: string, pages: number, note?: string): ToolResult {
   return {
-    outcome,
-    message: note ? `${SAVE_MESSAGE[outcome]} — ${note}` : SAVE_MESSAGE[outcome],
+    blob,
+    filename,
+    message: note ? `เสร็จแล้ว — ${note}` : 'เสร็จแล้ว',
     pages,
     bytes: blob.size,
   };
+}
+
+/**
+ * Re-order, rotate and drop pages of an already-finished PDF.
+ *
+ * The review step after a run is the same job as จัดเรียงหน้า, so it runs the
+ * same code rather than a second copy of it. `order` is 1-based page numbers in
+ * the order they should appear; `rotations` is keyed by the NEW position,
+ * because that is the page the user was looking at when they pressed rotate.
+ */
+export async function applyPageEdits(
+  blob: Blob,
+  order: number[],
+  rotations: Map<number, number>,
+): Promise<Blob> {
+  const { PDFDocument, degrees } = await import('pdf-lib');
+  const source = await PDFDocument.load(await blob.arrayBuffer(), { ignoreEncryption: true });
+  const out = await PDFDocument.create();
+  const copied = await out.copyPages(source, order.map((page) => page - 1));
+  copied.forEach((page, index) => {
+    const turn = rotations.get(index + 1);
+    if (turn) page.setRotation(degrees((page.getRotation().angle + turn) % 360));
+    out.addPage(page);
+  });
+  return toPdfBlob(await out.save());
 }
 
 /* ------------------------------------------------------------------ */
@@ -636,6 +673,7 @@ export async function runTool(toolId: string, input: ToolInput, ctx: RunContext)
         watermark: { x: 0.5, y: 0.5, size: 0.6 },
         'header-footer': { x: 0.5, y: 0.06, size: 0.5 },
         sign: { x: 0.75, y: 0.9, size: 0.3 },
+        'page-numbers': { x: 0.5, y: 0.955, size: 0.18 },
       };
       const fallback = DEFAULTS[toolId];
       const relX = Number(options.posX ?? fallback.x);
@@ -688,20 +726,35 @@ export async function runTool(toolId: string, input: ToolInput, ctx: RunContext)
     }
 
     case 'page-numbers': {
-      const { rgb, StandardFonts } = await import('pdf-lib');
       const doc = await loadPdfLib(files[0]);
-      const font = await doc.embedFont(StandardFonts.Helvetica);
       const total = doc.getPageCount();
-      doc.getPages().forEach((page, i) => {
-        const label = `${i + 1} / ${total}`;
-        page.drawText(label, {
-          x: page.getWidth() / 2 - font.widthOfTextAtSize(label, 10) / 2,
-          y: 22,
-          size: 10,
-          font,
-          color: rgb(0.15, 0.24, 0.33),
+
+      // The number used to be nailed to the bottom centre at 10pt, which lands
+      // on top of whatever footer the document already has. It is a stamp like
+      // any other now: type the pattern, drag it where it belongs.
+      // `{n}` is the page, `{total}` the count — "หน้า {n} จาก {total}" works.
+      const pattern = text.trim() || '{n} / {total}';
+      const relX = Number(options.posX ?? 0.5);
+      const relY = Number(options.posY ?? 0.955);
+      const relSize = Number(options.size ?? 0.18);
+
+      for (let index = 0; index < total; index += 1) {
+        const label = pattern
+          .replaceAll('{n}', String(index + 1))
+          .replaceAll('{total}', String(total));
+        const made = await makeStamp(label, { color: '#26374a', weight: 600 }).catch(() => null);
+        if (!made) throw new Error('รูปแบบเลขหน้าไม่ถูกต้อง');
+        const embedded = await doc.embedPng(made.dataUrl);
+        const page = doc.getPage(index);
+        const targetWidth = page.getWidth() * Math.min(0.95, Math.max(0.03, relSize));
+        const size = fitStamp(made, targetWidth, page.getHeight() * 0.2);
+        page.drawImage(embedded, {
+          x: Math.min(page.getWidth() - size.width, Math.max(0, relX * page.getWidth() - size.width / 2)),
+          y: Math.min(page.getHeight() - size.height, Math.max(0, (1 - relY) * page.getHeight() - size.height / 2)),
+          width: size.width,
+          height: size.height,
         });
-      });
+      }
       return deliver(toPdfBlob(await doc.save()), `${name}-เลขหน้า.pdf`, total);
     }
 

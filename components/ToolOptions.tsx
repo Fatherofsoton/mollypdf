@@ -34,12 +34,22 @@ export type OptionsProps = {
 };
 
 /** Tools whose whole job is putting something at a particular spot on a page. */
-const PLACEMENT: Record<string, { scope: 'single' | 'all'; x: number; y: number; size: number }> = {
+/**
+ * Every tool that stamps something onto a page: what it defaults to, and
+ * whether the mark lands on one page or all of them. Exported because the
+ * dialog lays these out in two columns — write on the left, place on the right.
+ */
+export const PLACEMENT: Record<string, { scope: 'single' | 'all'; x: number; y: number; size: number }> = {
   edit: { scope: 'single', x: 0.5, y: 0.5, size: 0.5 },
   sign: { scope: 'single', x: 0.75, y: 0.9, size: 0.3 },
   watermark: { scope: 'all', x: 0.5, y: 0.5, size: 0.6 },
   'header-footer': { scope: 'all', x: 0.5, y: 0.06, size: 0.5 },
+  // Page numbers were the one stamp with no say in where they went: always
+  // bottom-centre, always 10pt, on documents whose own footer often sits there.
+  'page-numbers': { scope: 'all', x: 0.5, y: 0.955, size: 0.18 },
 };
+
+export const PLACEMENT_TOOLS = new Set(Object.keys(PLACEMENT));
 
 /**
  * Compression presets, described by what the user gets rather than by the
@@ -161,7 +171,14 @@ export function ToolOptions({
         preview={
           options.signatureImage
             ? { kind: 'image', dataUrl: options.signatureImage }
-            : { kind: 'text', value: text }
+            : {
+                kind: 'text',
+                // Show what page 1 will actually say, not the pattern.
+                value:
+                  toolId === 'page-numbers'
+                    ? (text.trim() || '{n} / {total}').replaceAll('{n}', '1').replaceAll('{total}', 'N')
+                    : text,
+              }
         }
       />
     );

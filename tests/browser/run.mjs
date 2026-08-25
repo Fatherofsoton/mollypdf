@@ -66,6 +66,28 @@ async function openTool(page, toolId) {
   await page.waitForSelector('[role="dialog"]', { timeout: 20_000 });
 }
 
+/**
+ * Press the tool's run button, then its download button.
+ *
+ * Saving used to happen at the end of the job; it now happens on a click the
+ * user makes afterwards, because that is the only thing Safari will honour.
+ * When a run fails there is no download button at all, so `null` here means the
+ * same thing "no download event" used to mean.
+ */
+async function runThenDownload(page, dialog, runName, timeout = 60_000) {
+  await dialog.getByRole('button', { name: runName }).click();
+  await dialog
+    .getByRole('button', { name: 'ยกเลิก' })
+    .waitFor({ state: 'detached', timeout })
+    .catch(() => {});
+  const button = dialog.locator('[data-testid="download-button"]');
+  await button.waitFor({ timeout }).catch(() => {});
+  if (!(await button.count())) return null;
+  const downloadPromise = page.waitForEvent('download', { timeout }).catch(() => null);
+  await button.click();
+  return downloadPromise;
+}
+
 async function runToolWith(page, toolId, { file, text } = {}) {
   await openTool(page, toolId);
   // Scope to the dialog: the home page behind it has its own "เริ่ม…" buttons.
@@ -80,16 +102,7 @@ async function runToolWith(page, toolId, { file, text } = {}) {
     const field = (await generic.count()) ? generic : dialog.locator('input[type="password"]').first();
     await field.fill(text);
   }
-  const downloadPromise = page
-    .waitForEvent('download', { timeout: 60_000 })
-    .catch(() => null);
-  await dialog.getByRole('button', { name: /^เริ่ม/ }).click();
-  const download = await downloadPromise;
-  // Wait for the run to settle before reading the status the user sees.
-  await dialog
-    .getByRole('button', { name: 'ยกเลิก' })
-    .waitFor({ state: 'detached', timeout: 60_000 })
-    .catch(() => {});
+  const download = await runThenDownload(page, dialog, /^เริ่ม/);
   const status = (await dialog.locator('[data-testid="run-status"]').innerText()).trim();
   return { download, status };
 }
@@ -348,6 +361,9 @@ try {
     const dialog = picker.locator('[role="dialog"]');
     await dialog.locator('input[type="file"]').setInputFiles(join(fixtures, 'thai-1page.pdf'));
     await dialog.getByRole('button', { name: /^เริ่ม/ }).click();
+    // The picker opens on the download click, not at the end of the job —
+    // Safari only grants file-system access inside a user gesture.
+    await dialog.locator('[data-testid="download-button"]').click({ timeout: 60_000 });
     await picker.waitForFunction(() => window.__pickerCalls?.length > 0, { timeout: 30_000 });
 
     const options = await picker.evaluate(() => window.__pickerCalls[0]);
@@ -355,7 +371,7 @@ try {
       typeof options.suggestedName === 'string' && options.suggestedName.endsWith('.txt'),
       `save dialog got a bad filename: ${JSON.stringify(options)}`,
     );
-    const status = (await dialog.locator('[role="status"]').innerText()).trim();
+    const status = (await dialog.locator('[data-testid="save-status"]').innerText()).trim();
     assert(/บันทึกไฟล์ลงตำแหน่งที่คุณเลือก/.test(status), `unexpected status: ${status}`);
     await picker.close();
   });
@@ -504,9 +520,7 @@ try {
     await dialog.getByRole('tab', { name: 'ช่วงหน้า' }).click();
     await dialog.locator('#split-ranges').fill('1-2, 3-4');
 
-    const downloadPromise = page.waitForEvent('download', { timeout: 60_000 }).catch(() => null);
-    await dialog.getByRole('button', { name: /^เริ่ม/ }).click();
-    const download = await downloadPromise;
+    const download = await runThenDownload(page, dialog, /^เริ่ม/, 60_000);
     assert(download, 'no archive produced');
 
     const JSZip = (await import('jszip')).default;
@@ -589,9 +603,7 @@ try {
       join(fixtures, 'thai-1page.pdf'),
       join(fixtures, 'thai-segmented.pdf'),
     ]);
-    const downloadPromise = page.waitForEvent('download', { timeout: 90_000 }).catch(() => null);
-    await dialog.getByRole('button', { name: /^เริ่ม/ }).click();
-    const download = await downloadPromise;
+    const download = await runThenDownload(page, dialog, /^เริ่ม/, 90_000);
     const status = (await dialog.locator('[data-testid="run-status"]').innerText()).trim();
     assert(download, `no comparison produced. status: ${status}`);
     assert(!/is not a function/.test(status), `pdf.js failed: ${status}`);
@@ -632,9 +644,7 @@ try {
     const dialog = page.locator('[role="dialog"]');
     await dialog.locator('input[type="file"]').setInputFiles(lockedPath);
     await dialog.locator('input[type="password"]').fill('ทดสอบ1234');
-    const downloadPromise = page.waitForEvent('download', { timeout: 60_000 }).catch(() => null);
-    await dialog.getByRole('button', { name: /^เริ่ม/ }).click();
-    const download = await downloadPromise;
+    const download = await runThenDownload(page, dialog, /^เริ่ม/, 60_000);
     const status = (await dialog.locator('[data-testid="run-status"]').innerText()).trim();
     assert(download, `unlock produced nothing. status: ${status}`);
 
@@ -659,9 +669,7 @@ try {
     const dialog = page.locator('[role="dialog"]');
     await dialog.locator('input[type="file"]').setInputFiles(lockedPath);
     await dialog.locator('input[type="password"]').fill('ผิดแน่นอน');
-    const downloadPromise = page.waitForEvent('download', { timeout: 20_000 }).catch(() => null);
-    await dialog.getByRole('button', { name: /^เริ่ม/ }).click();
-    const download = await downloadPromise;
+    const download = await runThenDownload(page, dialog, /^เริ่ม/, 20_000);
     const status = (await dialog.locator('[data-testid="run-status"]').innerText()).trim();
     assert(!download, 'produced a file despite the wrong password');
     assert(/รหัสผ่านไม่ถูกต้อง/.test(status), `unhelpful message: ${status}`);
@@ -736,9 +744,7 @@ try {
     const outcome = await dialog.locator('[data-testid="export-outcome"]').innerText();
     assert(/จะได้ 2 ภาพ/.test(outcome), `outcome was: ${outcome}`);
 
-    const downloadPromise = page.waitForEvent('download', { timeout: 90_000 }).catch(() => null);
-    await dialog.getByRole('button', { name: /^เริ่ม/ }).click();
-    const download = await downloadPromise;
+    const download = await runThenDownload(page, dialog, /^เริ่ม/, 90_000);
     assert(download, 'no archive produced');
 
     const JSZip = (await import('jszip')).default;
@@ -754,9 +760,7 @@ try {
     await dialog.locator('input[type="file"]').setInputFiles(join(fixtures, 'thai-1page.pdf'));
     await dialog.locator('[data-testid="page-thumb"]').first().waitFor({ timeout: 45_000 });
 
-    const downloadPromise = page.waitForEvent('download', { timeout: 60_000 }).catch(() => null);
-    await dialog.getByRole('button', { name: /^เริ่ม/ }).click();
-    const download = await downloadPromise;
+    const download = await runThenDownload(page, dialog, /^เริ่ม/, 60_000);
     assert(download, 'nothing produced');
     const saved = download.suggestedFilename();
     // The name must be ASCII with a real extension, or the browser drops it
@@ -838,9 +842,7 @@ try {
     // Drop the last page, then save.
     await dialog.locator('[data-testid="organize-card"]').last()
       .locator('button[aria-label*="ลบหน้า"]').click();
-    const downloadPromise = page.waitForEvent('download', { timeout: 60_000 }).catch(() => null);
-    await dialog.getByRole('button', { name: /เริ่มจัดเรียงหน้า/ }).click();
-    const file = await downloadPromise;
+    const file = await runThenDownload(page, dialog, /เริ่มจัดเรียงหน้า/, 60_000);
     assert(file, 'no file produced by จัดเรียงหน้า');
     const bytes = new Uint8Array(await readFile(await file.path()));
     assert(bytes.length > 400, 'organize produced an empty file');
@@ -852,6 +854,97 @@ try {
     const pages = doc.numPages;
     await task.destroy();
     assert(pages === 3, `dropping one page of four should leave 3, got ${pages}`);
+    await page.keyboard.press('Escape');
+  });
+
+  await check('nothing is saved until the user presses download', async () => {
+    await page.goto(`${BASE}/?tool=pdf-text`, { waitUntil: 'domcontentloaded' });
+    const dialog = page.locator('[role="dialog"]');
+    await dialog.waitFor();
+    await dialog.locator('input[type="file"]').setInputFiles(join(fixtures, 'thai-1page.pdf'));
+
+    // Safari refuses a share sheet or a window.open outside a user gesture, so
+    // a save that fires at the end of the job silently does nothing there. If a
+    // download arrives before the button is pressed, that bug is back.
+    const early = page.waitForEvent('download', { timeout: 8_000 }).catch(() => null);
+    await dialog.getByRole('button', { name: /^เริ่ม/ }).click();
+    await dialog.locator('[data-testid="download-button"]').waitFor({ timeout: 60_000 });
+    assert(!(await early), 'the file was saved before the user asked for it');
+
+    const downloadPromise = page.waitForEvent('download', { timeout: 60_000 }).catch(() => null);
+    await dialog.locator('[data-testid="download-button"]').click();
+    assert(await downloadPromise, 'pressing download produced nothing');
+    await page.keyboard.press('Escape');
+  });
+
+  await check('รวม PDF opens a page-by-page review of the merged file', async () => {
+    await page.goto(`${BASE}/?tool=merge`, { waitUntil: 'domcontentloaded' });
+    const dialog = page.locator('[role="dialog"]');
+    await dialog.waitFor();
+    await dialog.locator('input[type="file"]').setInputFiles([
+      join(fixtures, 'thai-1page.pdf'),
+      join(fixtures, 'thai-4page-with-blanks.pdf'),
+    ]);
+    await dialog.getByRole('button', { name: /^เริ่ม/ }).click();
+    await dialog.locator('[data-testid="result-panel"]').waitFor({ timeout: 60_000 });
+    // The review is open without asking: merging is about order, and the moment
+    // you see the result is the moment you notice the order is wrong.
+    await dialog.locator('[data-testid="organize-card"]').nth(4).waitFor({ timeout: 45_000 });
+    const cards = await dialog.locator('[data-testid="organize-card"]').count();
+    assert(cards === 5, `expected 1 + 4 = 5 pages in the review, saw ${cards}`);
+    await page.keyboard.press('Escape');
+  });
+
+  await check('editing the review changes the file that downloads', async () => {
+    await page.goto(`${BASE}/?tool=merge`, { waitUntil: 'domcontentloaded' });
+    const dialog = page.locator('[role="dialog"]');
+    await dialog.waitFor();
+    await dialog.locator('input[type="file"]').setInputFiles([
+      join(fixtures, 'thai-1page.pdf'),
+      join(fixtures, 'thai-4page-with-blanks.pdf'),
+    ]);
+    await dialog.getByRole('button', { name: /^เริ่ม/ }).click();
+    await dialog.locator('[data-testid="organize-card"]').nth(4).waitFor({ timeout: 60_000 });
+    await dialog.locator('[data-testid="organize-card"]').last()
+      .locator('button[aria-label*="ลบหน้า"]').click();
+
+    const button = dialog.locator('[data-testid="download-button"]');
+    assert(
+      /ดาวน์โหลดตามที่แก้ไข/.test(await button.innerText()),
+      'the button did not notice the page edit',
+    );
+    const downloadPromise = page.waitForEvent('download', { timeout: 60_000 }).catch(() => null);
+    await button.click();
+    const file = await downloadPromise;
+    assert(file, 'the edited merge produced nothing');
+
+    const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
+    const task = pdfjs.getDocument({ data: new Uint8Array(await readFile(await file.path())) });
+    const doc = await task.promise;
+    const pages = doc.numPages;
+    await task.destroy();
+    assert(pages === 4, `dropping one of five merged pages should leave 4, got ${pages}`);
+    await page.keyboard.press('Escape');
+  });
+
+  await check('ใส่เลขหน้า can be typed and placed like a signature', async () => {
+    await page.goto(`${BASE}/?tool=page-numbers`, { waitUntil: 'domcontentloaded' });
+    const dialog = page.locator('[role="dialog"]');
+    await dialog.waitFor();
+    await dialog.locator('input[type="file"]').setInputFiles(join(fixtures, 'thai-4page-with-blanks.pdf'));
+    await dialog.locator('#tool-input').fill('หน้า {n} จาก {total}');
+    // The same drag-to-place workspace the signature uses.
+    const marker = dialog.locator('button[aria-label*="ตำแหน่ง"]');
+    await marker.waitFor({ timeout: 45_000 });
+    assert(
+      /หน้า 1 จาก N/.test(await marker.innerText()),
+      `the marker should preview page one, saw: ${await marker.innerText()}`,
+    );
+    await marker.focus();
+    await page.keyboard.press('ArrowLeft');
+    await page.keyboard.press('ArrowLeft');
+    const moved = await marker.getAttribute('aria-label');
+    assert(/48% จากซ้าย/.test(moved ?? ''), `arrow keys did not move it: ${moved}`);
     await page.keyboard.press('Escape');
   });
 

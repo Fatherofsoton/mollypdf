@@ -52,13 +52,19 @@ export type ToolDialogProps = {
   hideFileList?: boolean;
   /** Lets a workspace re-open the file picker to append more files. */
   registerPicker?: (open: () => void) => void;
+  /**
+   * Once a result is on screen the inputs that produced it are noise — the
+   * merge source cards alone filled the dialog and pushed the merged pages out
+   * of sight. The result panel carries its own way back.
+   */
+  hideInputs?: boolean;
 };
 
 export function ToolDialog({
   tool, files, onFiles, onSetFiles, onClose, onRun, onCancel,
   state, message, progress, children, fileless = false,
   orderable = false, hideRunButton = false,
-  wide = false, hideFileList = false, registerPicker,
+  wide = false, hideFileList = false, registerPicker, hideInputs = false,
 }: ToolDialogProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -166,7 +172,7 @@ export function ToolDialog({
         </header>
 
         <div className="space-y-4 p-5 sm:p-7">
-          {!fileless && (
+          {!fileless && !hideInputs && (
             <>
               {/* A real <button>: focusable, Enter/Space activate it, and it is
                   announced with its purpose.
@@ -231,7 +237,7 @@ export function ToolDialog({
             </>
           )}
 
-          {!hideFileList && <FileList files={files} onChange={onSetFiles} orderable={orderable} />}
+          {!hideFileList && !hideInputs && <FileList files={files} onChange={onSetFiles} orderable={orderable} />}
 
           {children}
 

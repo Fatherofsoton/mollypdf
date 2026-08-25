@@ -24,6 +24,13 @@ export type OrganizeWorkspaceProps = {
   file: File | undefined;
   options: Record<string, string>;
   onChange: (next: Record<string, string>) => void;
+  /**
+   * The same grid serves two jobs: จัดเรียงหน้า before a run, and the review
+   * step after one. Only the sentence above it differs, so it is a prop rather
+   * than a second component.
+   */
+  summary?: (state: { kept: number; removed: number; reordered: boolean; rotated: boolean }) => string;
+  hint?: string;
 };
 
 /** One slot in the working order. `page` is the 1-based page in the source. */
@@ -41,7 +48,7 @@ const rotationClass: Record<number, string> = {
   270: '-rotate-90 scale-[0.74]',
 };
 
-export function OrganizeWorkspace({ file, options, onChange }: OrganizeWorkspaceProps) {
+export function OrganizeWorkspace({ file, options, onChange, summary, hint }: OrganizeWorkspaceProps) {
   const [thumbs, setThumbs] = useState<Thumbnail[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(Boolean(file));
@@ -139,10 +146,12 @@ export function OrganizeWorkspace({ file, options, onChange }: OrganizeWorkspace
             ? 'กำลังอ่านเอกสาร…'
             : slots.length === 0
               ? 'ลบหมดทุกหน้าแล้ว — ต้องเหลืออย่างน้อย 1 หน้า'
-              : `จะบันทึกเป็นเอกสาร ${slots.length.toLocaleString('th-TH')} หน้า` +
-                (removed ? ` · ลบออก ${removed}` : '') +
-                (reordered ? ' · สลับลำดับแล้ว' : '') +
-                (rotated ? ' · หมุนบางหน้า' : '')}
+              : summary
+                ? summary({ kept: slots.length, removed, reordered, rotated })
+                : `จะบันทึกเป็นเอกสาร ${slots.length.toLocaleString('th-TH')} หน้า` +
+                  (removed ? ` · ลบออก ${removed}` : '') +
+                  (reordered ? ' · สลับลำดับแล้ว' : '') +
+                  (rotated ? ' · หมุนบางหน้า' : '')}
         </p>
         {(removed > 0 || reordered || rotated) && (
           <button
@@ -291,8 +300,8 @@ export function OrganizeWorkspace({ file, options, onChange }: OrganizeWorkspace
       </ul>
 
       <p className="text-xs text-subtle">
-        ลากการ์ดเพื่อสลับตำแหน่ง · หรือกด Tab ไปที่หน้าที่ต้องการแล้วใช้ปุ่มลูกศรซ้าย–ขวา ·
-        การเปลี่ยนแปลงยังไม่ถูกบันทึกจนกว่าจะกดปุ่มด้านล่าง
+        {hint ??
+          'ลากการ์ดเพื่อสลับตำแหน่ง · หรือกด Tab ไปที่หน้าที่ต้องการแล้วใช้ปุ่มลูกศรซ้าย–ขวา · การเปลี่ยนแปลงยังไม่ถูกบันทึกจนกว่าจะกดปุ่มด้านล่าง'}
       </p>
     </div>
   );

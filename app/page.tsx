@@ -28,12 +28,14 @@ import {
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { categories, featuredTools, readyTools, toolById, tools, type Tool } from '../lib/tools/registry';
-import { runTool, extractForSpeech, type ToolInput } from '../lib/tools/run';
+import { runTool, extractForSpeech, applyPageEdits, type ToolInput } from '../lib/tools/run';
 import { CancelledError, type Progress } from '../lib/runtime';
 import { ToolDialog, type RunState } from '../components/ToolDialog';
-import { ToolOptions } from '../components/ToolOptions';
+import { ToolOptions, PLACEMENT_TOOLS } from '../components/ToolOptions';
 import { ToolNav } from '../components/ToolNav';
 import { PasswordField } from '../components/PasswordField';
+import { saveBlob, SAVE_MESSAGE } from '../lib/download';
+import { ResultPanel, type ToolOutcome } from '../components/ResultPanel';
 import { SignaturePad, type SignatureValue } from '../components/SignaturePad';
 import { ReadAloud } from '../components/ReadAloud';
 
@@ -42,6 +44,7 @@ type GlobalStats = { jobs: number; bytes: number; pages: number; popular: Array<
 const FILELESS = new Set(['text-pdf', 'html-pdf']);
 
 const inputLabels: Record<string, string> = {
+  'page-numbers': 'รูปแบบเลขหน้า',
   organize: 'ลำดับหน้าใหม่',
   'remove-pages': 'หน้าที่ต้องการลบ',
   'extract-pages': 'หน้าที่ต้องการดึง',
@@ -107,6 +110,9 @@ export default function Home() {
   const [toolText, setToolText] = useState('');
   const [toolOptions, setToolOptions] = useState<Record<string, string>>({});
   const [signature, setSignature] = useState<SignatureValue>(null);
+  const [result, setResult] = useState<ToolOutcome | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [savedMessage, setSavedMessage] = useState('');
   const [speechText, setSpeechText] = useState('');
   const [state, setState] = useState<RunState>('idle');
   const [message, setMessage] = useState('');
@@ -218,6 +224,8 @@ export default function Home() {
     const controller = new AbortController();
     abortRef.current = controller;
     setState('processing');
+    setResult(null);
+    setSavedMessage('');
     setProgress({ ratio: null, label: 'กำลังเริ่ม' });
     setMessage('กำลังประมวลผลบนอุปกรณ์ของคุณ…');
 
@@ -230,13 +238,20 @@ export default function Home() {
     const input: ToolInput = { files, text: toolText, options };
 
     try {
-      const result = await runTool(selected.id, input, {
+      const finished = await runTool(selected.id, input, {
         signal: controller.signal,
         report: setProgress,
       });
       setState('done');
-      setMessage(result.message);
-      record(selected, result.bytes, result.pages);
+      setMessage(finished.message);
+      setResult({
+        blob: finished.blob,
+        filename: finished.filename,
+        message: finished.message,
+        pages: finished.pages,
+      });
+      setSavedMessage('');
+      record(selected, finished.bytes, finished.pages);
     } catch (error) {
       if (error instanceof CancelledError) {
         setState('idle');
@@ -248,6 +263,42 @@ export default function Home() {
     } finally {
       abortRef.current = null;
       setProgress(null);
+    }
+  }
+
+  /**
+   * Changing anything about the job invalidates the result that is on screen —
+   * otherwise the download button keeps offering the file from the settings you
+   * just moved away from, and the run button is nowhere to be seen.
+   */
+  function changeText(value: string) {
+    setToolText(value);
+    if (result) { setResult(null); setSavedMessage(''); setState('idle'); setMessage(''); }
+  }
+
+  function changeOptions(next: Record<string, string> | ((current: Record<string, string>) => Record<string, string>)) {
+    setToolOptions(next);
+    if (result) { setResult(null); setSavedMessage(''); setState('idle'); setMessage(''); }
+  }
+
+  /**
+   * Saving runs from the button's own click, never from the end of the job.
+   * Safari only grants file-system and share access inside a user gesture, and
+   * a promise continuation minutes later does not count as one.
+   */
+  async function handleDownload(edits: { order: number[]; rotations: Map<number, number> } | null) {
+    if (!result) return;
+    setSaving(true);
+    setSavedMessage('');
+    try {
+      const blob = edits ? await applyPageEdits(result.blob, edits.order, edits.rotations) : result.blob;
+      const outcome = await saveBlob(blob, result.filename);
+      setSavedMessage(SAVE_MESSAGE[outcome]);
+    } catch (error) {
+      setState('error');
+      setMessage(error instanceof Error ? error.message : 'บันทึกไฟล์ไม่สำเร็จ');
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -666,16 +717,24 @@ export default function Home() {
           // Split shows a page grid and Merge shows cover cards; both need room.
           // Anything with a page preview needs the room: a 640px column makes
           // the preview too small to place a signature accurately.
-          wide={['split', 'merge', 'sign', 'organize', 'edit', 'watermark', 'header-footer', 'pdf-jpg', 'pdf-png'].includes(
-            selected.id,
-          )}
+          // Anything with a page preview needs the room: a 640px column makes
+          // the preview too small to place a stamp accurately. Every result
+          // with a page grid needs it too.
+          wide={
+            PLACEMENT_TOOLS.has(selected.id) ||
+            Boolean(result) ||
+            ['split', 'merge', 'organize', 'pdf-jpg', 'pdf-png'].includes(selected.id)
+          }
           // Merge renders its own visual cards, so the plain list would be a
           // second, competing set of reorder controls for the same files.
           hideFileList={selected.id === 'merge'}
+          hideInputs={Boolean(result)}
           registerPicker={(open) => {
             openPickerRef.current = open;
           }}
           onFiles={(incoming) => {
+            setResult(null);
+            setSavedMessage('');
             // Adding to a merge list should extend it, not throw away what is
             // already there — and the same file must not land twice.
             setFiles((current) => {
@@ -692,13 +751,19 @@ export default function Home() {
           }}
           onSetFiles={(next) => {
             setFiles(next);
+            setResult(null);
+            setSavedMessage('');
             setState('idle');
             setMessage('');
             setSpeechText('');
           }}
           orderable={selected.id === 'merge' || selected.id === 'compare'}
-          hideRunButton={selected.id === 'read-aloud'}
-          onClose={() => setSelected(null)}
+          hideRunButton={selected.id === 'read-aloud' || Boolean(result)}
+          onClose={() => {
+            setSelected(null);
+            setResult(null);
+            setSavedMessage('');
+          }}
           onRun={handleRun}
           onCancel={() => abortRef.current?.abort()}
           state={state}
@@ -709,11 +774,27 @@ export default function Home() {
             <PasswordField
               label={inputLabels[selected.id]}
               value={toolText}
-              onChange={setToolText}
+              onChange={changeText}
               mode={selected.id === 'protect' ? 'new' : 'existing'}
             />
           )}
 
+
+          {/* Every stamping tool is two jobs at once — write the thing, then
+              say where it goes — and stacking them pushed the page preview
+              below the fold on a laptop. Side by side on a wide screen both are
+              visible together; the grid collapses back to a stack on narrow
+              ones. เซ็นเอกสาร proved the shape; ข้อความ, เลขหน้า, ลายน้ำ and
+              หัว–ท้ายกระดาษ are the same job and now get the same treatment. */}
+          <div
+            hidden={Boolean(result)}
+            className={
+              PLACEMENT_TOOLS.has(selected.id)
+                ? 'grid items-start gap-6 lg:grid-cols-[minmax(0,380px)_minmax(0,1fr)]'
+                : 'space-y-4'
+            }
+          >
+            <div className="space-y-4">
           {inputLabels[selected.id] &&
             selected.id !== 'sign' &&
             selected.id !== 'organize' &&
@@ -726,7 +807,7 @@ export default function Home() {
                   <textarea
                     id="tool-input"
                     value={toolText}
-                    onChange={(event) => setToolText(event.target.value)}
+                    onChange={(event) => changeText(event.target.value)}
                     rows={7}
                     placeholder={
                       selected.id === 'html-pdf' ? '<h1>หัวข้อ</h1><p>เนื้อหา</p>' : 'พิมพ์หรือวางข้อความที่นี่'
@@ -739,11 +820,13 @@ export default function Home() {
                     type="text"
                     autoComplete="off"
                     value={toolText}
-                    onChange={(event) => setToolText(event.target.value)}
+                    onChange={(event) => changeText(event.target.value)}
                     placeholder={
-                      ['organize', 'remove-pages', 'extract-pages'].includes(selected.id)
-                        ? 'เช่น 1, 3-5, 2'
-                        : 'พิมพ์ที่นี่'
+                      selected.id === 'page-numbers'
+                        ? 'หน้า {n} จาก {total}'
+                        : ['organize', 'remove-pages', 'extract-pages'].includes(selected.id)
+                          ? 'เช่น 1, 3-5, 2'
+                          : 'พิมพ์ที่นี่'
                     }
                     className="mt-2 h-11 w-full rounded-xl border border-line bg-card px-3 text-body outline-none focus:border-[color:var(--brand-ring)]"
                   />
@@ -751,21 +834,10 @@ export default function Home() {
               </div>
             )}
 
-          {/* เซ็นเอกสาร is two jobs at once — make the mark, then say where it
-              goes — and stacking them meant the page preview started below the
-              fold on a laptop. Side by side on a wide screen, both are visible
-              together; the grid collapses back to a stack on narrow ones. */}
-          <div
-            className={
-              selected.id === 'sign'
-                ? 'grid items-start gap-6 lg:grid-cols-[minmax(0,380px)_minmax(0,1fr)]'
-                : 'space-y-4'
-            }
-          >
           {selected.id === 'sign' && (
             <SignaturePad
               typed={toolText}
-              onTypedChange={setToolText}
+              onTypedChange={changeText}
               onDrawnChange={(value) => {
                 setSignature(value);
                 // Mirror it into the options so the drag-to-place preview shows
@@ -802,16 +874,36 @@ export default function Home() {
             )
           )}
 
+            </div>
+
           <ToolOptions
             toolId={selected.id}
             files={files}
             options={toolOptions}
-            onChange={setToolOptions}
+            onChange={changeOptions}
             onFilesChange={setFiles}
             onAddFiles={() => openPickerRef.current?.()}
             text={toolText}
           />
           </div>
+
+          {result && (
+            <ResultPanel
+              // A new result is a new review: remount so no page edit survives it.
+              key={`${result.filename}-${result.blob.size}`}
+              result={result}
+              onDownload={handleDownload}
+              saving={saving}
+              savedMessage={savedMessage}
+              reviewOpen={['merge', 'organize'].includes(selected.id)}
+              onBack={() => {
+                setResult(null);
+                setSavedMessage('');
+                setState('idle');
+                setMessage('');
+              }}
+            />
+          )}
 
           {selected.id === 'ocr' && (
             <p className="text-xs leading-6 text-muted">
